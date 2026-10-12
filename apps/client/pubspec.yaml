@@ -1,0 +1,28 @@
+name: viora_client
+description: "Viora VPN — Android-first client and owner cabinet."
+publish_to: 'none'
+version: 0.7.4+24
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_selector: ^1.1.0
+  image: ^4.12.0
+  zxing2: ^0.2.4
+  mobile_scanner: ^7.4.2
+  flutter_v2ray_client:
+    path: ../../third_party/flutter_v2ray_client
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/licenses/
+    - assets/viora.png

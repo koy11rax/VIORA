@@ -1,0 +1,21 @@
+// Optional local workaround for Google's repository being inaccessible.
+// Applied only when explicitly passed with Gradle -I; never changes global settings.
+beforeSettings { settings ->
+    settings.pluginManagement.repositories {
+        gradlePluginPortal()
+        mavenCentral()
+        maven { url = uri('https://maven.aliyun.com/repository/google') }
+    }
+    settings.dependencyResolutionManagement.repositories {
+        maven { url = uri('https://maven.aliyun.com/repository/google') }
+    }
+}
+gradle.settingsEvaluated { settings ->
+    if (settings.dependencyResolutionManagement.repositoriesMode.get().name() != 'FAIL_ON_PROJECT_REPOS') {
+        gradle.beforeProject { project ->
+            project.repositories {
+                maven { url = uri('https://maven.aliyun.com/repository/google') }
+            }
+        }
+    }
+}
