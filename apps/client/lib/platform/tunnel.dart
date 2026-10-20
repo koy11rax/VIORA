@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../domain/tunnel_config.dart';
+import '../domain/desktop_applications.dart';
 
 enum TunnelPhase {
   unavailable,
@@ -40,6 +41,70 @@ class DesktopXrayEngine implements TunnelEngine {
   Timer? _poll;
   bool _polling = false, _initialized = false;
   Process? _process;
+  TunnelConfig? _wanted;
+  String _wantedName = '';
+  Timer? _retryTimer;
+  Completer<void>? _stoppedForRetry;
+  int _attempts = 0;
+  bool _recovering = false;
+  DateTime? _activeSince;
+
+  bool _recover(String? code) {
+    final config = _wanted;
+    if (config == null ||
+        !config.reconnect ||
+        !{
+          'core_exited',
+          'helper_exited',
+          'service_unavailable',
+          'ipc_failed',
+          'core_start_failed',
+          'core_start_timeout',
+          'tun_not_ready',
+          'start_failed',
+        }.contains(code)) {
+      return false;
+    }
+    if (_recovering) return true;
+    if (_activeSince != null &&
+        DateTime.now().difference(_activeSince!).inSeconds >= 30) {
+      _attempts = 0;
+    }
+    _activeSince = null;
+    if (++_attempts > config.retries) {
+      _wanted = null;
+      _events.add(
+        const TunnelStats('FAILED', errorCode: 'reconnect_exhausted'),
+      );
+      return true;
+    }
+    _recovering = true;
+    _events.add(const TunnelStats('CONNECTING'));
+    _retryTimer?.cancel();
+    _retryTimer = Timer(Duration(seconds: 1 << _attempts), () async {
+      if (!identical(_wanted, config)) return;
+      try {
+        _stoppedForRetry = Completer<void>();
+        await _stopNative();
+        await _stoppedForRetry!.future.timeout(const Duration(seconds: 8));
+        if (!identical(_wanted, config)) return;
+        _recovering = false;
+        await _launch(config, _wantedName);
+      } catch (_) {
+        if (identical(_wanted, config)) {
+          _wanted = null;
+          _recovering = false;
+          _events.add(
+            const TunnelStats('FAILED', errorCode: 'reconnect_exhausted'),
+          );
+        }
+      } finally {
+        _stoppedForRetry = null;
+      }
+    });
+    return true;
+  }
+
   @override
   bool get supported => Platform.isWindows || Platform.isLinux;
   @override
@@ -80,6 +145,15 @@ class DesktopXrayEngine implements TunnelEngine {
       ].contains(state)) {
         throw const FormatException();
       }
+      if (state == 'FAILED' && _recover(data['code'] as String?)) return;
+      if (state == 'CONNECTED') {
+        _recovering = false;
+        _activeSince ??= DateTime.now();
+      }
+      if (state == 'DISCONNECTED' && _stoppedForRetry != null) {
+        if (!_stoppedForRetry!.isCompleted) _stoppedForRetry!.complete();
+        return;
+      }
       _events.add(
         TunnelStats(
           state,
@@ -87,6 +161,7 @@ class DesktopXrayEngine implements TunnelEngine {
           upload: data['upload'] as int? ?? 0,
           download: data['download'] as int? ?? 0,
           errorCode: data['code'] as String?,
+          lockdown: data['lockdown'] == true,
         ),
       );
     } catch (_) {
@@ -98,14 +173,40 @@ class DesktopXrayEngine implements TunnelEngine {
   Future<bool> requestPermission() async => supported;
   @override
   Future<void> start(TunnelConfig config, String name) async {
+    _retryTimer?.cancel();
+    _wanted = config;
+    _wantedName = name;
+    _attempts = 0;
+    _activeSince = null;
+    _recovering = false;
+    await _launch(config, name);
+  }
+
+  Future<void> _launch(TunnelConfig config, String name) async {
     // Android package IDs must never silently become an all-app desktop VPN.
-    if (config.allowedApps != null || config.excludedApps.isNotEmpty) {
+    final selected = config.allowedApps ?? config.excludedApps;
+    if (selected.any(
+      (id) => !DesktopApplications.valid(id, Platform.operatingSystem),
+    )) {
       _events.add(
         const TunnelStats('FAILED', errorCode: 'app_rules_unsupported'),
       );
       return;
     }
-    final json = jsonEncode(config.json);
+    final json = jsonEncode({
+      ...config.json,
+      'desktop': {
+        'appMode': config.allowedApps != null
+            ? 'only'
+            : config.excludedApps.isNotEmpty
+            ? 'except'
+            : 'all',
+        'applications': selected,
+        'reconnect': config.reconnect,
+        'retries': config.retries,
+        'strict': config.requireLockdown,
+      },
+    });
     if (Platform.isWindows) {
       await channel.invokeMethod<void>('desktopTunnelStart', {'config': json});
       return;
@@ -164,13 +265,13 @@ class DesktopXrayEngine implements TunnelEngine {
       if (disconnected != null) {
         _receive(disconnected!);
       } else if (!terminal) {
-        _events.add(
-          TunnelStats(
-            'FAILED',
-            errorCode: exit == 126 || exit == 127
+        _receive(
+          jsonEncode({
+            'state': 'FAILED',
+            'code': exit == 126 || exit == 127
                 ? 'permission_denied'
                 : 'helper_exited',
-          ),
+          }),
         );
       }
     }());
@@ -178,13 +279,20 @@ class DesktopXrayEngine implements TunnelEngine {
 
   @override
   Future<void> stop() async {
+    _wanted = null;
+    _retryTimer?.cancel();
+    _recovering = false;
+    await _stopNative();
+  }
+
+  Future<void> _stopNative() async {
     if (Platform.isWindows) {
       await channel.invokeMethod<void>('desktopTunnelStop');
     } else if (_process != null) {
       _process!.stdin.writeln('{"stop":true}');
       await _process!.stdin.flush();
     } else {
-      _events.add(const TunnelStats('DISCONNECTED'));
+      _receive('{"state":"DISCONNECTED"}');
     }
   }
 }
@@ -316,6 +424,12 @@ class TunnelController extends ChangeNotifier {
     if (value.state == 'FAILED') {
       _deadline?.cancel();
       error = switch (value.errorCode) {
+        'protection_failed' =>
+          'Системная защита не подтверждена. Проверь установку VIORA. Блокировка могла сохраниться: её состояние доступно в настройках защиты.',
+        'policy_busy' =>
+          'Другая операция VPN ещё выполняется. Дождись остановки и повтори.',
+        'endpoint_dns_failed' =>
+          'Не удалось получить адрес VPN-сервера. Постоянная защита остаётся включённой.',
         'lockdown_required' =>
           'Для строгой защиты включи в настройках Android «Постоянный VPN» и «Блокировать соединения без VPN» для VIORA.',
         'restart_state_failed' =>
@@ -329,7 +443,7 @@ class TunnelController extends ChangeNotifier {
         'core_integrity' || 'helper_missing' =>
           'Установи Viora через установщик: VPN-компонент отсутствует или повреждён.',
         'app_rules_unsupported' =>
-          'Для этой версии ПК выбери режим «Все приложения». Фильтр приложений пока доступен на Android.',
+          'Выбери программы заново в разделе «Приложения»: на ПК нужны пути исполняемых файлов, а не Android-пакеты.',
         'core_start_timeout' || 'helper_timeout' =>
           'VPN не запустился вовремя. Проверь системный запрос и повтори подключение.',
         _ => 'VPN-компонент остановился. Проверь подключение и повтори запуск.',

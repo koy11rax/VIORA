@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VIORA
+Comment=VPN and subscription management
+Comment[ru]=VPN и управление подпиской
+Exec=/usr/bin/viora
+Icon=viora
+Terminal=false
+Categories=Network;Security;
+StartupWMClass=dev.viora.viora_client

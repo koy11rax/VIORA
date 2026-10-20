@@ -1,0 +1,23 @@
+# Local binary recipe. Place the payload archive beside this file.
+pkgname=viora-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='VIORA VPN — клиент VPN и управление подпиской'
+arch=('x86_64')
+url='https://github.com/koy11rax/VIORA'
+license=('custom:VIORA' 'MPL-2.0' 'BSD-3-Clause' 'MIT')
+depends=('glibc>=2.35' 'gcc-libs' 'gtk3' 'libsecret' 'libepoxy' 'fontconfig'
+         'libayatana-appindicator' 'libayatana-indicator' 'ayatana-ido'
+         'libdbusmenu-glib' 'polkit' 'systemd' 'nftables')
+install=viora.install
+optdepends=('gnome-keyring: сохранение аккаунта и профилей через Secret Service')
+provides=("viora=$pkgver")
+conflicts=('viora')
+# Stripping changes the core hash checked by the privileged helper.
+options=('!strip' '!debug')
+source=("Viora-Linux-$pkgver-payload.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  cp -a "$srcdir/usr" "$pkgdir/"
+}

@@ -1,0 +1,4 @@
+pre_remove() {
+  # Full removal only; pacman upgrades preserve the armed policy.
+  /usr/lib/viora/viora_tunnel --protection recover || return 1
+}

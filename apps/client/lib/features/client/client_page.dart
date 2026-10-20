@@ -30,6 +30,8 @@ class ClientState {
   VoidCallback? onChanged;
   int selectedProfile = -1, demoProfile = 0;
   bool profilesLoaded = false, startupHandled = false;
+  bool protectionBusy = false;
+  String protectionStatus = 'unknown';
   DateTime lastSubscriptionRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   double radius = 24;
   bool compact = false, neutral = false, motion = true;
@@ -183,17 +185,21 @@ class ClientPage extends StatefulWidget {
 
 class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   Timer? _maintenanceTimer;
+  Timer? _startupMaintenance;
   bool _maintenanceBusy = false;
   @override
   void initState() {
     super.initState();
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isWindows || Platform.isLinux) {
       WidgetsBinding.instance.addObserver(this);
       _maintenanceTimer = Timer.periodic(
         const Duration(seconds: 30),
         (_) => _maintain(),
       );
-      unawaited(Future<void>.delayed(const Duration(seconds: 2), _maintain));
+      _startupMaintenance = Timer(
+        const Duration(seconds: 2),
+        () => unawaited(_maintain()),
+      );
     }
   }
 
@@ -239,6 +245,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _maintenanceTimer?.cancel();
+    _startupMaintenance?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -524,7 +531,10 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) =>
-      (widget.desktop || defaultTargetPlatform == TargetPlatform.android)
+      (widget.desktop ||
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux)
       ? Padding(
           padding: widget.desktop ? EdgeInsets.zero : const EdgeInsets.all(16),
           child: ApprovedContent(

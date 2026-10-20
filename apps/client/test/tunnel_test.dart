@@ -289,8 +289,11 @@ void main() {
     expect(except.allowedApps, isNull);
     expect(except.excludedApps, ['com.example.browser']);
     expect(
-      () => TunnelConfig.build(profile: VlessProfile.parse(link), strict: true),
-      throwsFormatException,
+      TunnelConfig.build(
+        profile: VlessProfile.parse(link),
+        strict: true,
+      ).requireLockdown,
+      isTrue,
     );
     expect(
       () => TunnelConfig.build(

@@ -19,3 +19,10 @@ __pycache__/
 *.db
 **/key.properties
 **/signing.properties
+
+**/ephemeral/
+toolchains/*
+!toolchains/xray-main/
+!toolchains/wintun-0.14.1.zip
+toolchains/xray-main/*
+!toolchains/xray-main/source.zip

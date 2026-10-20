@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(VioraFirewall LANGUAGES CXX)
+add_executable(viora_firewall main.cpp)
+target_compile_features(viora_firewall PRIVATE cxx_std_17)
+target_compile_definitions(viora_firewall PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+target_compile_options(viora_firewall PRIVATE /W4 /WX /utf-8)
+set_property(TARGET viora_firewall PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded)
+target_link_libraries(viora_firewall PRIVATE fwpuclnt rpcrt4 iphlpapi advapi32 ws2_32)

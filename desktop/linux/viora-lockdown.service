@@ -1,0 +1,15 @@
+[Unit]
+Description=VIORA persistent VPN protection
+DefaultDependencies=no
+After=local-fs.target nftables.service firewalld.service
+Before=network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/var/lib/viora/protection.enabled
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/viora/viora_tunnel --restore-protection
+RemainAfterExit=yes
+
+[Install]
+WantedBy=network-pre.target

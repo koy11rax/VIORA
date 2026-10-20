@@ -1,0 +1,59 @@
+%global debug_package %{nil}
+%global _build_id_links none
+# Preserve the signed-by-hash core byte for byte; no stripping or rewriting.
+%global __os_install_post %{nil}
+%global _binary_payload w6.gzdio
+%global __provides_exclude_from ^/usr/lib/viora/.*$
+%global __requires_exclude ^(libflutter_linux_gtk|libfile_selector_linux_plugin)\.so.*$
+
+Name: viora
+Version: @VERSION@
+Release: 1
+Summary: VIORA VPN — клиент VPN и управление подпиской
+License: LicenseRef-VIORA AND MPL-2.0 AND BSD-3-Clause AND MIT
+URL: https://github.com/koy11rax/VIORA
+Source0: Viora-Linux-@VERSION@-payload.tar.gz
+ExclusiveArch: x86_64
+Requires: gtk3, libsecret, libayatana-appindicator-gtk3
+Requires: libayatana-indicator-gtk3, polkit, systemd-resolved, nftables
+Requires: glibc >= 2.35
+Recommends: gnome-keyring
+
+%description
+VIORA: VLESS, подписки, Telegram, устройства, выбор программ и маршрутизация.
+Собранные Linux-бинарники упакованы без изменения; установка не запускает VPN.
+
+%prep
+%setup -q -c
+
+%build
+# Prebuilt Linux x86_64 payload; no runtime checks during packaging.
+
+%install
+mkdir -p %{buildroot}
+cp -a usr %{buildroot}/
+
+%files
+%defattr(-,root,root,-)
+/usr/bin/viora
+/usr/lib/viora
+/usr/share/applications/viora.desktop
+/usr/share/icons/hicolor/256x256/apps/viora.png
+/usr/share/polkit-1/actions/dev.viora.tunnel.policy
+/usr/lib/systemd/system/viora-lockdown.service
+/usr/lib/systemd/system/network-pre.target.wants/viora-lockdown.service
+/usr/lib/systemd/system/NetworkManager.service.d/50-viora-protection.conf
+/usr/lib/systemd/system/systemd-networkd.service.d/50-viora-protection.conf
+
+%preun
+if [ "$1" = 0 ]; then /usr/lib/viora/viora_tunnel --protection recover; fi
+
+%post
+systemctl daemon-reload >/dev/null 2>&1 || :
+
+%postun
+systemctl daemon-reload >/dev/null 2>&1 || :
+
+%changelog
+* Tue Oct 20 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
+- Fedora RPM; preserved core hashes, desktop integration and polkit policy.

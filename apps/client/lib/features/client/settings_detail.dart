@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../../ui/design.dart';
+import '../../platform/desktop_protection.dart';
+import '../../platform/tunnel.dart';
 import 'client_page.dart' show ClientState;
 
 class SettingsDetail extends StatelessWidget {
@@ -19,6 +21,60 @@ class SettingsDetail extends StatelessWidget {
     required this.onNavigate,
     required this.onNotice,
   });
+  Future<void> _protection(BuildContext context, String action) async {
+    if (state.protectionBusy) return;
+    if (action != 'status' &&
+        state.tunnel.phase != TunnelPhase.disconnected &&
+        state.tunnel.phase != TunnelPhase.failed) {
+      onNotice('Сначала отключи VPN и дождись остановки');
+      return;
+    }
+    if (action == 'enable') {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Включить постоянную защиту?'),
+          content: const Text(
+            'Интернет будет недоступен без VPN, даже после закрытия VIORA и перезагрузки. Прямые исключения тоже блокируются. Снять блокировку можно здесь кнопкой «Выключить защиту».',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Включить'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+    }
+    state.protectionBusy = true;
+    onChanged();
+    try {
+      final enabled = await DesktopProtection.change(action);
+      state.protectionStatus = enabled ? 'on' : 'off';
+      state.options['protection'] = enabled ? 'strict' : 'session';
+      onNotice(
+        enabled
+            ? 'Системная блокировка включена. Подключись к VPN'
+            : 'Системная блокировка выключена',
+      );
+    } catch (error) {
+      state.protectionStatus = 'unknown';
+      onNotice(
+        error is FormatException
+            ? error.message
+            : 'Не удалось подтвердить состояние защиты',
+      );
+    } finally {
+      state.protectionBusy = false;
+      onChanged();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget toggle(String key, String label, String description) =>
@@ -49,6 +105,7 @@ class SettingsDetail extends StatelessWidget {
           for (final c in choices)
             DropdownMenuItem(
               value: c.$1,
+              enabled: true,
               child: Text(c.$2, style: const TextStyle(fontSize: 12)),
             ),
         ],
@@ -90,7 +147,9 @@ class SettingsDetail extends StatelessWidget {
                 ),
                 DesignSetting(
                   'Восстанавливать соединение',
-                  'При смене Wi-Fi и мобильной сети и при остановке VPN-движка',
+                  Platform.isAndroid
+                      ? 'При смене Wi-Fi и мобильной сети и при остановке VPN-движка'
+                      : 'После неожиданной остановки движка или службы. Ручное отключение отменяет повторные попытки',
                   Switch(
                     value: state.reconnect,
                     onChanged: (v) {
@@ -115,15 +174,63 @@ class SettingsDetail extends StatelessWidget {
                   'Число попыток восстановления; пауза увеличивается после ошибки',
                   [('3', '3 попытки'), ('5', '5 попыток')],
                 ),
-                choose(
-                  'protection',
-                  'Защита при обрыве',
-                  'Строгий режим требует системной блокировки соединений без VPN',
-                  [
-                    ('session', 'В пределах VPN-сессии'),
-                    ('strict', 'Строго: без выхода напрямую'),
-                  ],
-                ),
+                if (Platform.isAndroid)
+                  choose(
+                    'protection',
+                    'Защита при обрыве',
+                    Platform.isAndroid
+                        ? 'Строгий режим требует системной блокировки соединений без VPN'
+                        : 'Защита действует в пределах VPN-сессии. Постоянная блокировка вне VPN для ПК пока недоступна',
+                    [
+                      ('session', 'В пределах VPN-сессии'),
+                      ('strict', 'Строго: без выхода напрямую'),
+                    ],
+                  ),
+                if (Platform.isWindows || Platform.isLinux) ...[
+                  DesignSetting(
+                    'Постоянная блокировка без VPN',
+                    'Сохраняется при закрытии VIORA и перезагрузке. Приложения и сервисы, выбранные напрямую, тоже потеряют доступ. Подключение VPN само блокировку не выключает.',
+                    DesignTag(switch (state.protectionStatus) {
+                      'on' => 'Включена',
+                      'off' => 'Выключена',
+                      _ => 'Не проверена',
+                    }),
+                  ),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        onPressed:
+                            state.protectionBusy ||
+                                state.tunnel.phase != TunnelPhase.disconnected
+                            ? null
+                            : () => _protection(context, 'enable'),
+                        icon: const Icon(Icons.shield_outlined),
+                        label: const Text('Включить защиту'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: state.protectionBusy
+                            ? null
+                            : () => _protection(context, 'disable'),
+                        icon: const Icon(Icons.lock_open),
+                        label: const Text('Выключить защиту'),
+                      ),
+                      TextButton.icon(
+                        onPressed: state.protectionBusy
+                            ? null
+                            : () => _protection(context, 'status'),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Проверить состояние'),
+                      ),
+                    ],
+                  ),
+                  if (state.protectionBusy) const LinearProgressIndicator(),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Перед изменением отключи VPN. Обычное подключение и выход из приложения не снимают постоянную блокировку. Для импорта подписки без VPN сначала выключи защиту.',
+                  ),
+                ],
                 DesignSetting(
                   'Доступ к локальной сети',
                   'Принтеры и домашние устройства',
@@ -202,7 +309,7 @@ class SettingsDetail extends StatelessWidget {
                 choose(
                   'ipv6',
                   'IPv6',
-                  'В текущем Android-движке IPv6 блокируется в обоих режимах',
+                  'В этой версии IPv6 блокируется в обоих режимах',
                   [
                     ('auto', 'Через VPN или блокировать'),
                     ('block', 'Всегда блокировать в туннеле'),
@@ -225,9 +332,11 @@ class SettingsDetail extends StatelessWidget {
                     'Крестик сворачивает VIORA в трей. Полный выход — через меню значка.',
                     DesignTag('Трей'),
                   ),
-                const DesignSetting(
+                DesignSetting(
                   'Уведомление VPN',
-                  'Время, скорость и трафик; нажатие открывает VIORA. Кнопка «Отключить» завершает соединение.',
+                  Platform.isAndroid
+                      ? 'Время, скорость и трафик; нажатие открывает VIORA. Кнопка «Отключить» завершает соединение.'
+                      : 'Состояние и быстрые действия доступны в трее. Подключение, отключение, выбор сервера и полный выход.',
                   DesignTag('Во время VPN'),
                 ),
                 const DesignSetting(
@@ -240,7 +349,7 @@ class SettingsDetail extends StatelessWidget {
                   onPressed: () => showLicensePage(
                     context: context,
                     applicationName: 'Viora',
-                    applicationVersion: '0.7.4',
+                    applicationVersion: Platform.isAndroid ? '0.7.4' : '0.8.2',
                   ),
                   icon: const Icon(Icons.info_outline),
                   label: const Text('Лицензии компонентов'),
@@ -257,7 +366,7 @@ class SettingsDetail extends StatelessWidget {
                 ),
                 const DesignSetting(
                   'HWID для Viora VPN',
-                  'При импорте и обновлении подписки Viora на Android',
+                  'При импорте и обновлении подписки Viora',
                   DesignTag('Обязательно'),
                 ),
                 TextButton.icon(
@@ -275,9 +384,11 @@ class SettingsDetail extends StatelessWidget {
                   'Идентификатор Viora им не передаётся',
                   DesignTag('Отдельная привязка'),
                 ),
-                const DesignSetting(
+                DesignSetting(
                   'Защищённое восстановление',
-                  'Последний VPN-профиль хранится на устройстве в зашифрованном виде. Ключ — в Android Keystore. Ручное отключение отменяет восстановление службы. Системный «Постоянный VPN» управляется Android.',
+                  Platform.isAndroid
+                      ? 'Последний VPN-профиль хранится на устройстве в зашифрованном виде. Ключ — в Android Keystore. Ручное отключение отменяет восстановление службы. Системный «Постоянный VPN» управляется Android.'
+                      : 'Сеанс и серверы хранятся в защищённом хранилище системы. Автоподключение при открытии настраивается отдельно. После полного выхода из приложения VPN останавливается.',
                   DesignTag('На устройстве'),
                 ),
                 const DesignSetting(

@@ -8,6 +8,22 @@ class DesktopTray {
   final _ids = Expando<int>();
   int _nextId = 0;
   Map<int, VlessProfile> _current = {};
+  DateTime? _lastTick;
+  int _uploaded = 0, _downloaded = 0;
+  String _speed = '';
+
+  static String _bytes(num value) {
+    if (value >= 1073741824) {
+      return '${(value / 1073741824).toStringAsFixed(1)} ГБ';
+    }
+    if (value >= 1048576) {
+      return '${(value / 1048576).toStringAsFixed(1)} МБ';
+    }
+    if (value >= 1024) {
+      return '${(value / 1024).toStringAsFixed(1)} КБ';
+    }
+    return '${value.toInt()} Б';
+  }
 
   Map<String, Object> snapshot({
     required List<VlessProfile> profiles,
@@ -17,7 +33,31 @@ class DesktopTray {
     required bool supported,
     required bool subscriptions,
     required String status,
+    String duration = '00:00:00',
+    int upload = 0,
+    int download = 0,
   }) {
+    final now = DateTime.now();
+    if (running && _lastTick != null) {
+      final milliseconds = now.difference(_lastTick!).inMilliseconds;
+      if (milliseconds >= 500) {
+        final up = upload >= _uploaded
+            ? (upload - _uploaded) * 1000 / milliseconds
+            : 0;
+        final down = download >= _downloaded
+            ? (download - _downloaded) * 1000 / milliseconds
+            : 0;
+        _speed = '↑ ${_bytes(up)}/с · ↓ ${_bytes(down)}/с';
+        _lastTick = now;
+        _uploaded = upload;
+        _downloaded = download;
+      }
+    } else {
+      _lastTick = running ? now : null;
+      _uploaded = upload;
+      _downloaded = download;
+      _speed = '';
+    }
     _current = {};
     final servers = <Map<String, Object>>[];
     for (var i = 0; i < profiles.length; i++) {
@@ -33,6 +73,10 @@ class DesktopTray {
       'canConnect': supported && selected >= 0 && selected < profiles.length,
       'subscriptions': subscriptions,
       'status': status,
+      'details': running
+          ? '$duration · ↑ ${_bytes(upload)} · ↓ ${_bytes(download)}'
+          : '',
+      'speed': running ? _speed : '',
     };
   }
 

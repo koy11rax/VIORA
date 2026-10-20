@@ -2,6 +2,7 @@ import 'dart:io';
 import 'profile.dart';
 import 'routing.dart';
 import 'russian_services.dart';
+import 'desktop_applications.dart';
 
 /// Only validated, structured profiles enter the core; arbitrary JSON is never imported.
 class TunnelConfig {
@@ -33,11 +34,6 @@ class TunnelConfig {
     bool reconnect = true,
     int retries = 3,
   }) {
-    if (strict && !Platform.isAndroid) {
-      throw const FormatException(
-        'Строгая защита ещё не готова. Выбери защиту в пределах VPN-сессии.',
-      );
-    }
     if (retries < 1 || retries > 5) {
       throw const FormatException('Некорректное число попыток');
     }
@@ -47,7 +43,10 @@ class TunnelConfig {
     }
     if (applications.any(
       (id) =>
-          !RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$').hasMatch(id) ||
+          (!RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$').hasMatch(id) &&
+              !(Platform.isWindows || Platform.isLinux
+                  ? DesktopApplications.valid(id, Platform.operatingSystem)
+                  : false)) ||
           id == 'dev.viora.viora_client',
     )) {
       throw const FormatException('Некорректный список приложений');

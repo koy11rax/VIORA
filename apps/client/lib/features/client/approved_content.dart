@@ -1,4 +1,5 @@
 import 'hwid_page.dart';
+import 'desktop_application_picker.dart';
 import 'package:flutter/material.dart';
 import '../../ui/design.dart';
 import 'client_page.dart' show ClientState;
@@ -943,7 +944,7 @@ class ApprovedContent extends StatelessWidget {
             DesignTag(
               Platform.isAndroid
                   ? 'ANDROID · ПРИ СЛЕДУЮЩЕМ ПОДКЛЮЧЕНИИ'
-                  : 'СИСТЕМНАЯ ИНТЕГРАЦИЯ В РАЗРАБОТКЕ',
+                  : 'ПРИМЕНИТСЯ ПРИ ПЕРЕПОДКЛЮЧЕНИИ',
             ),
             gap(),
             if (Platform.isAndroid && state.appMode != 'all')
@@ -951,11 +952,16 @@ class ApprovedContent extends StatelessWidget {
                 selected: state.applications,
                 onChanged: onChanged,
               )
+            else if (!Platform.isAndroid && state.appMode != 'all')
+              DesktopApplicationPicker(
+                selected: state.applications,
+                onChanged: onChanged,
+              )
             else
               Text(
                 Platform.isAndroid
                     ? 'Все приложения используют VPN, кроме самой Viora. Для выбора приложений смени режим выше.'
-                    : 'Режим сохраняется, но ещё не применяется. Выбор процессов и системная фильтрация будут подключены отдельно для Windows и Linux.',
+                    : 'Все программы используют VPN с учётом правил маршрутизации. Для выбора программ смени режим выше.',
               ),
           ],
         ),
@@ -1217,7 +1223,9 @@ class ApprovedContent extends StatelessWidget {
                 Text(
                   Platform.isAndroid
                       ? 'Состояние приходит от Android. Запуск туннеля сам по себе не подтверждает доступность сервера: проверь открытие сайта после подключения.'
-                      : 'Состояние приходит от VPN-компонента. При подключении подтверди системный запрос. Доступность сервера проверь открытием сайта.',
+                      : Platform.isWindows
+                      ? 'Состояние приходит от службы VIORA. Для работы установи приложение через установщик. Запрос администратора появляется при установке.'
+                      : 'Состояние приходит от VPN-компонента. При подключении подтверди системный запрос Linux.',
                 ),
                 gap(),
                 button('Связаться через бота', () => unavailable('Поддержка')),

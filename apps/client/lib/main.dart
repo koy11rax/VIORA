@@ -357,7 +357,9 @@ class _VioraShellState extends State<VioraShell> {
   final clientKey = GlobalKey<ClientPageState>();
   final tray = DesktopTray();
   bool get hasTray =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
 
   Future<Object?> _trayCall(MethodCall call) async {
     if (call.method != 'action' || !mounted) return null;
@@ -404,6 +406,9 @@ class _VioraShellState extends State<VioraShell> {
             supported: tunnel.engine.supported,
             subscriptions: state.subscriptions.isNotEmpty,
             status: tunnel.label,
+            duration: tunnel.stats.duration,
+            upload: tunnel.stats.upload,
+            download: tunnel.stats.download,
           ),
         );
       } on MissingPluginException {
