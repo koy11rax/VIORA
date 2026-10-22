@@ -47,7 +47,9 @@ jobs:
           $sdk = Join-Path $env:RUNNER_TEMP flutter
           git init $sdk
           git -C $sdk remote add origin https://github.com/flutter/flutter.git
-          git -C $sdk fetch --depth=1 origin ac4e799d237041cf905519190471f657b657155a
+          git -C $sdk fetch --depth=1 origin refs/tags/3.35.5:refs/tags/3.35.5
+          $revision = git -C $sdk rev-parse '3.35.5^{commit}'
+          if ($LASTEXITCODE -ne 0 -or $revision -ne 'ac4e799d237041cf905519190471f657b657155a') { throw 'Unexpected Flutter release revision' }
           git -C $sdk checkout --detach FETCH_HEAD
           "$sdk/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: flutter pub get --enforce-lockfile

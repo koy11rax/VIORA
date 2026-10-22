@@ -18,7 +18,8 @@ jobs:
         run: |
           git init "$RUNNER_TEMP/flutter"
           git -C "$RUNNER_TEMP/flutter" remote add origin https://github.com/flutter/flutter.git
-          git -C "$RUNNER_TEMP/flutter" fetch --depth 1 origin ac4e799d237041cf905519190471f657b657155a
+          git -C "$RUNNER_TEMP/flutter" fetch --depth 1 origin refs/tags/3.35.5:refs/tags/3.35.5
+          test "$(git -C "$RUNNER_TEMP/flutter" rev-parse '3.35.5^{commit}')" = ac4e799d237041cf905519190471f657b657155a
           git -C "$RUNNER_TEMP/flutter" checkout --detach FETCH_HEAD
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
       - run: flutter pub get --enforce-lockfile
@@ -45,7 +46,9 @@ jobs:
         run: |
           git init "$env:RUNNER_TEMP/flutter"
           git -C "$env:RUNNER_TEMP/flutter" remote add origin https://github.com/flutter/flutter.git
-          git -C "$env:RUNNER_TEMP/flutter" fetch --depth 1 origin ac4e799d237041cf905519190471f657b657155a
+          git -C "$env:RUNNER_TEMP/flutter" fetch --depth 1 origin refs/tags/3.35.5:refs/tags/3.35.5
+          $revision = git -C "$env:RUNNER_TEMP/flutter" rev-parse '3.35.5^{commit}'
+          if ($LASTEXITCODE -ne 0 -or $revision -ne 'ac4e799d237041cf905519190471f657b657155a') { throw 'Unexpected Flutter release revision' }
           git -C "$env:RUNNER_TEMP/flutter" checkout --detach FETCH_HEAD
           "$env:RUNNER_TEMP/flutter/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: flutter pub get --enforce-lockfile
