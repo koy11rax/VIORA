@@ -21,18 +21,11 @@ class QuickSettings {
     }
   }
 
-  /// Consumes a queued tile action after Flutter and the account/profile state
-  /// are ready. A missing bridge on desktop or an older installation is benign.
-  static Future<String?> takeAction() async {
-    try {
-      final result = await channel.invokeMethod<String>('takeAction');
-      return result == 'connect' ? result : null;
-    } on MissingPluginException {
-      return null;
-    } on PlatformException {
-      return null;
-    }
-  }
+  /// Prepares the selected profile for native background tile connections.
+  /// Null explicitly clears it. Completion means the native cache acknowledged
+  /// the operation; validation or storage failures must reach the caller.
+  static Future<void> prepareProfile(Map<String, dynamic>? profile) =>
+      channel.invokeMethod<void>('prepareProfile', profile);
 
   /// Reads service state without changing the tunnel. A failed observation is
   /// unknown, not disconnected, and cannot be used as permission to start again.

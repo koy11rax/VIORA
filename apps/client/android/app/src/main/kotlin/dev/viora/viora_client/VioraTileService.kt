@@ -1,13 +1,16 @@
 package dev.viora.viora_client
 
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import dev.amirzr.flutter_v2ray_client.v2ray.services.V2rayVPNService
 import dev.amirzr.flutter_v2ray_client.v2ray.utils.AppConfigs
@@ -17,6 +20,10 @@ class VioraTileService : TileService() {
     private var listening = false
     private var clicking = false
     private var generation = 0
+    private var destroyed = false
+    private var startingUntil = 0L
+    private val worker = QuickTileProfile.worker
+    private val handler = Handler(Looper.getMainLooper())
     private val changes = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { refresh() }
     }
@@ -44,13 +51,15 @@ class VioraTileService : TileService() {
 
     private fun render(state: String?) {
         val tile = qsTile ?: return
+        if (state == "CONNECTED" || state == "CONNECTING" || state == "FAILED") startingUntil = 0
+        val starting = SystemClock.elapsedRealtime() < startingUntil
         tile.label = "VIORA VPN"
-        tile.state = when (state) {
+        tile.state = if (starting) Tile.STATE_UNAVAILABLE else when (state) {
             "CONNECTED" -> Tile.STATE_ACTIVE
             "DISCONNECTED", "FAILED" -> Tile.STATE_INACTIVE
             else -> Tile.STATE_UNAVAILABLE
         }
-        val description = when (state) {
+        val description = if (starting) "Запуск VPN…" else when (state) {
             "CONNECTED" -> "Подключено"
             "CONNECTING" -> "Подключение…"
             "DISCONNECTED" -> "Отключено"
@@ -64,45 +73,54 @@ class VioraTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        if (clicking) return
+        if (clicking || SystemClock.elapsedRealtime() < startingUntil) return
         unlockAndRun {
             if (clicking) return@unlockAndRun
             clicking = true
             statusProbe().query { state ->
-                clicking = false
-                if (!listening) return@query
+                if (!listening) { clicking = false; return@query }
                 when (state) {
                     "CONNECTED" -> {
-                        TileActionQueue.clear()
+                        clicking = false
                         // Explicit STOP needs no saved profile or running Flutter engine.
                         try {
                             startService(Intent(this, V2rayVPNService::class.java).putExtra(
                                 "COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE
                             ))
-                        } catch (_: Exception) { openApp() }
+                        } catch (_: Exception) { message("Не удалось отключить VPN. Открой VIORA.") }
                     }
-                    "DISCONNECTED", "FAILED" -> { TileActionQueue.connect(); openApp() }
-                    else -> openApp()
+                    "DISCONNECTED", "FAILED" -> startInBackground()
+                    else -> { clicking = false; message("Не удалось проверить VPN. Повтори нажатие.") }
                 }
             }
         }
     }
 
-    private fun openApp() {
-        val intent = Intent(this, MainActivity::class.java).addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        )
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startActivityAndCollapse(PendingIntent.getActivity(
-                    this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                ))
-            } else {
-                @Suppress("DEPRECATION")
-                startActivityAndCollapse(intent)
+    private fun startInBackground() {
+        startingUntil = SystemClock.elapsedRealtime() + 15_000
+        render("DISCONNECTED")
+        handler.postDelayed({ if (listening) refresh() }, 15_000)
+        worker.execute {
+            val failure = try { QuickTileProfile(this).start(); null }
+            catch (error: QuickTileException) { error.code }
+            catch (_: Exception) { "start_refused" }
+            handler.post {
+                clicking = false
+                if (destroyed) return@post
+                if (failure != null) {
+                    startingUntil = 0
+                    message(when (failure) {
+                        "permission_required" -> "Сначала разреши VPN-подключение в VIORA."
+                        "profile_unavailable", "profile_invalid" -> "Открой VIORA и выбери рабочий сервер для плитки."
+                        else -> "Не удалось запустить VPN. Проверь подключение в VIORA."
+                    })
+                }
+                if (listening) refresh()
             }
-        } catch (_: Exception) { TileActionQueue.clear() }
+        }
     }
+
+    private fun message(text: String) { Toast.makeText(this, text, Toast.LENGTH_LONG).show() }
 
     override fun onStopListening() {
         generation++
@@ -113,9 +131,11 @@ class VioraTileService : TileService() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         if (listening) { unregisterReceiver(changes); listening = false }
         probe?.close()
         probe = null
+        handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 }

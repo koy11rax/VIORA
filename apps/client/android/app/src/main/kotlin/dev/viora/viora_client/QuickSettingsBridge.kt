@@ -4,24 +4,13 @@ import android.app.StatusBarManager
 import android.content.ComponentName
 import android.graphics.drawable.Icon
 import android.os.Build
-import android.os.SystemClock
 import io.flutter.plugin.common.MethodChannel
-
-/** Commands originate only from the protected TileService, never exported activity extras. */
-internal object TileActionQueue {
-    private var connectAt: Long? = null
-    fun connect() { connectAt = SystemClock.elapsedRealtime() }
-    fun take(): String? {
-        val created = connectAt ?: return null
-        connectAt = null
-        return if (SystemClock.elapsedRealtime() - created in 0..30_000) "connect" else null
-    }
-    fun clear() { connectAt = null }
-}
+import java.util.concurrent.ExecutorService
 
 class QuickSettingsBridge(
     private val activity: MainActivity,
-    private val channel: MethodChannel
+    private val channel: MethodChannel,
+    private val worker: ExecutorService
 ) {
     private val probe = TunnelStatusProbe(activity)
     private var addResult: MethodChannel.Result? = null
@@ -30,7 +19,16 @@ class QuickSettingsBridge(
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestAddTile" -> addTile(result)
-                "takeAction" -> result.success(TileActionQueue.take())
+                "prepareProfile" -> worker.execute {
+                    try {
+                        require(call.arguments == null || call.arguments is Map<*, *>)
+                        val saved = QuickTileProfile(activity).save(call.arguments as Map<*, *>?)
+                        check(call.arguments == null || saved)
+                        activity.runOnUiThread { result.success(null) }
+                    } catch (_: Exception) {
+                        activity.runOnUiThread { result.error("profile_unavailable", "Не удалось подготовить плитку", null) }
+                    }
+                }
                 "snapshot" -> probe.query { state ->
                     if (state == null) result.error("status_unavailable", "Не удалось проверить VPN", null)
                     else result.success(state)
@@ -39,8 +37,6 @@ class QuickSettingsBridge(
             }
         }
     }
-
-    fun resumed() { channel.invokeMethod("actionAvailable", null) }
 
     private fun addTile(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT < 33) { result.success("manual"); return }

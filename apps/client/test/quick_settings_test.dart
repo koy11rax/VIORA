@@ -39,27 +39,82 @@ void main() {
   );
 
   test(
-    'queued action bridge consumes native actions and tolerates unavailable startup',
+    'profile bridge preserves configuration and explicit cache clear',
     () async {
-      var action = 'connect';
+      final calls = <MethodCall>[];
       messenger.setMockMethodCallHandler(channel, (call) async {
-        expect(call.method, 'takeAction');
-        final pending = action;
-        action = '';
-        return pending;
+        calls.add(call);
+        return null;
       });
-      expect(await QuickSettings.takeAction(), 'connect');
-      expect(await QuickSettings.takeAction(), isNull);
-      for (final unsupported in ['toggle', 'disconnect', 'unknown']) {
-        action = unsupported;
-        expect(await QuickSettings.takeAction(), isNull);
-      }
+      final profile = <String, dynamic>{
+        'version': 1,
+        'config': '{"inbounds":[],"outbounds":[]}',
+        'name': 'Regression fixture',
+        'mtu': 1420,
+        'reconnect': true,
+        'retries': 3,
+        'strict': false,
+        'allowed': ['org.example.allowed'],
+        'blocked': <String>[],
+      };
+      await QuickSettings.prepareProfile(profile);
+      expect(calls.single.method, 'prepareProfile');
+      expect(calls.single.arguments, profile);
+      final excludedApplications = <String, dynamic>{
+        ...profile,
+        'allowed': null,
+        'blocked': ['org.example.blocked'],
+      };
+      await QuickSettings.prepareProfile(excludedApplications);
+      expect(calls[1].arguments, excludedApplications);
+      final allApplications = <String, dynamic>{...profile, 'allowed': null};
+      await QuickSettings.prepareProfile(allApplications);
+      expect(calls[2].arguments, allApplications);
+      await QuickSettings.prepareProfile(null);
+      expect(calls[3].method, 'prepareProfile');
+      expect(calls[3].arguments, isNull);
+      expect(calls, hasLength(4));
+    },
+  );
+
+  test('profile preparation waits for native acknowledgement', () async {
+    final acknowledgement = Completer<void>();
+    messenger.setMockMethodCallHandler(channel, (_) async {
+      await acknowledgement.future;
+      return null;
+    });
+    var finished = false;
+    final pending = QuickSettings.prepareProfile(
+      null,
+    ).then((_) => finished = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(finished, isFalse);
+    acknowledgement.complete();
+    await pending;
+    expect(finished, isTrue);
+  });
+
+  test(
+    'profile preparation propagates native and missing bridge failures',
+    () async {
       messenger.setMockMethodCallHandler(channel, (_) async {
-        throw PlatformException(code: 'unavailable');
+        throw PlatformException(code: 'profile_invalid');
       });
-      expect(await QuickSettings.takeAction(), isNull);
+      await expectLater(
+        QuickSettings.prepareProfile({'config': 'invalid fixture'}),
+        throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            'code',
+            'profile_invalid',
+          ),
+        ),
+      );
       messenger.setMockMethodCallHandler(channel, null);
-      expect(await QuickSettings.takeAction(), isNull);
+      await expectLater(
+        QuickSettings.prepareProfile(null),
+        throwsA(isA<MissingPluginException>()),
+      );
     },
   );
 

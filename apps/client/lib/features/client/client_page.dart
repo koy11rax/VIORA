@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import '../../data/account_api.dart';
 import 'account_page.dart';
 import '../../data/subscription_import.dart';
@@ -53,6 +54,48 @@ class ClientState {
   final options = Map<String, Object>.of(optionDefaults);
   String appMode = 'all';
   bool reconnect = true, lan = false, autoConnect = false, notifications = true;
+  TunnelConfig selectedTunnelConfig() {
+    if (selectedProfile < 0 || selectedProfile >= profiles.length) {
+      throw const FormatException('Сначала импортируй и выбери свой сервер');
+    }
+    return TunnelConfig.build(
+      profile: profiles[selectedProfile],
+      rules: rules,
+      appMode: appMode,
+      applications: applications,
+      localNetwork: lan,
+      russianServicesDirect: options['russianServicesDirect'] as bool,
+      dns: options['dns'] == 'custom' ? options['dnsAddress'] as String : null,
+      mtu: options['mtu'] == 'auto'
+          ? 1500
+          : int.parse(options['mtu'] as String),
+      strict: options['protection'] == 'strict',
+      reconnect: reconnect,
+      retries: int.parse(options['retry'] as String),
+    );
+  }
+
+  /// Invalid/absent selections explicitly clear the native tile cache, so an
+  /// earlier server or a broader app-routing policy cannot be started instead.
+  Map<String, dynamic>? quickTileProfile() {
+    try {
+      final config = selectedTunnelConfig();
+      return {
+        'version': 1,
+        'name': profiles[selectedProfile].name,
+        'config': jsonEncode(config.json),
+        'allowed': config.allowedApps,
+        'blocked': config.excludedApps,
+        'mtu': config.mtu,
+        'reconnect': config.reconnect,
+        'retries': config.retries,
+        'strict': config.requireLockdown,
+      };
+    } on FormatException {
+      return null;
+    }
+  }
+
   bool get hasVioraSubscription => subscriptions.keys.any(
     (source) => isVioraSubscription(Uri.parse(source)),
   );
@@ -224,6 +267,10 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     try {
       final state = widget.state;
       await state.tunnel.initialize();
+      if (state.tunnel.engine is TunnelStatusReader &&
+          !await state.tunnel.synchronizeNativeStatus()) {
+        return;
+      }
       if (!mounted) return;
       if (!state.startupHandled) {
         state.startupHandled = true;
@@ -447,23 +494,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     }
     try {
       final profile = state.profiles[state.selectedProfile];
-      final config = TunnelConfig.build(
-        profile: profile,
-        rules: state.rules,
-        appMode: state.appMode,
-        applications: state.applications,
-        localNetwork: state.lan,
-        russianServicesDirect: state.options['russianServicesDirect'] as bool,
-        dns: state.options['dns'] == 'custom'
-            ? state.options['dnsAddress'] as String
-            : null,
-        mtu: state.options['mtu'] == 'auto'
-            ? 1500
-            : int.parse(state.options['mtu'] as String),
-        strict: state.options['protection'] == 'strict',
-        reconnect: state.reconnect,
-        retries: int.parse(state.options['retry'] as String),
-      );
+      final config = state.selectedTunnelConfig();
       await tunnel.connect(
         config,
         profile.name,

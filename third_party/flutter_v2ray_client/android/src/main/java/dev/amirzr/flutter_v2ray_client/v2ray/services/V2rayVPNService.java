@@ -78,6 +78,15 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
         }
         try {
             if (command == AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE) {
+                // Tile and UI can race before the first status broadcast. A
+                // second START must not tear down or replace a live session.
+                // Explicit server switching already performs STOP first.
+                if (desired && !destroyed) {
+                    broadcast(V2rayCoreManager.getInstance().isV2rayCoreRunning()
+                            ? AppConfigs.V2RAY_STATES.V2RAY_CONNECTED
+                            : AppConfigs.V2RAY_STATES.V2RAY_CONNECTING, null);
+                    return START_STICKY;
+                }
                 v2rayConfig = (V2rayConfig) intent.getSerializableExtra("V2RAY_CONFIG");
             } else {
                 // Android always-on starts without our app command; sticky restarts

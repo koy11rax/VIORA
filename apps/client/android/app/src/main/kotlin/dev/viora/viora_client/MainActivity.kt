@@ -6,10 +6,9 @@ import io.flutter.plugin.common.MethodChannel
 import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
-import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
-    private val worker = Executors.newSingleThreadExecutor()
+    private val worker = QuickTileProfile.worker
     private var quickSettings: QuickSettingsBridge? = null
     var quickSettingsResumed = false
         private set
@@ -17,7 +16,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         quickSettings = QuickSettingsBridge(this,
-            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.viora/quick_settings"))
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.viora/quick_settings"), worker)
         val vault = SecureVault(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.viora/platform")
             .setMethodCallHandler { call, result ->
@@ -91,7 +90,6 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         quickSettingsResumed = true
-        quickSettings?.resumed()
     }
 
     override fun onPause() {
@@ -99,15 +97,9 @@ class MainActivity : FlutterActivity() {
         super.onPause()
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        quickSettings?.resumed()
-    }
-
     override fun onDestroy() {
         quickSettings?.close()
         quickSettings = null
-        worker.shutdown()
         super.onDestroy()
     }
 }

@@ -55,5 +55,5 @@ class SecureVault(context: Context) {
         return id
     }
 
-    fun remove(name: String) { check(name == "session"); check(prefs.edit().remove(name).commit()) }
+    fun remove(name: String) { check(name == "session" || name == "quick_tile_profile"); check(prefs.edit().remove(name).commit()) }
 }
