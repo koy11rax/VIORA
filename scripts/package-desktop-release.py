@@ -69,6 +69,7 @@ for name in roots:
     for path in (repo / name).rglob('*'):
         if (path.is_file() and not path.is_symlink()
                 and not ignored.intersection(path.relative_to(repo).parts)
+                and path.suffix.lower() != '.iml'
                 and path.name not in {'local.properties', 'key.properties', 'signing.properties'}):
             files.add(path)
 for path in files:
@@ -111,7 +112,7 @@ for platform, binaries in {
     if platform == 'Windows':
         contents['licenses/Wintun-LICENSE.txt'] = (repo / 'toolchains/wintun/wintun/LICENSE.txt').read_bytes()
     manifest = {'version': VERSION, 'platform': platform, 'architecture': 'amd64',
-                'tunnelRuntimeTests': 'not-run-at-owner-request',
+                'tunnelRuntimeTests': 'desktop-not-run; Android-owner-confirmed-browser-and-Telegram',
                 'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
     contents['release.json'] = (json.dumps(manifest, indent=2) + '\n').encode('utf-8')
     contents['SHA256SUMS.txt'] = ''.join(

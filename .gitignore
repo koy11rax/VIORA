@@ -6,6 +6,7 @@ build/
 **/ephemeral/
 __pycache__/
 *.pyc
+*.iml
 .venv/
 *.sqlite*
 *.db

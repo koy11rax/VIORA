@@ -6,9 +6,12 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="${VIORA_VERSION:-1.0.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 deb="${1:-$root/artifacts/Viora-Linux-$version-amd64.deb}"
-for tool in dpkg-deb rpmbuild makepkg bsdtar fakeroot zstd sha256sum; do
+for tool in dpkg-deb rpmbuild makepkg pacman bsdtar fakeroot zstd sha256sum; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 1; }
 done
+# makepkg may continue after a failing pacman subprocess while constructing
+# BUILDINFO. Reject a broken tool runtime before producing any variants.
+pacman --version >/dev/null
 [[ -f "$deb" && ! -L "$deb" && -f "$deb.sha256" ]] || { echo 'Missing verified DEB'; exit 1; }
 expected="$(awk 'NR==1 {print $1}' "$deb.sha256")"
 [[ "$expected" =~ ^[0-9a-f]{64}$ && "$(sha256sum "$deb" | cut -d' ' -f1)" == "$expected" ]] || exit 1
