@@ -28,6 +28,23 @@ class DesktopPreferences {
   }
 
   Future<Map<String, dynamic>> load() async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await _loadSnapshot();
+      } on FileSystemException catch (error) {
+        // Windows may briefly deny an open during an atomic replacement.
+        // Retry sharing/lock violations only, never mask corrupt data or ACLs.
+        if (!Platform.isWindows ||
+            ![32, 33].contains(error.osError?.errorCode) ||
+            attempt >= 3) {
+          rethrow;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadSnapshot() async {
     if (!await file.exists()) return {};
     if (await file.length() > 262144) {
       throw const FormatException('Настройки слишком велики');
@@ -40,13 +57,39 @@ class DesktopPreferences {
   }
 
   Future<void> save(Map<String, dynamic> data) {
-    final encoded = jsonEncode({...data, 'version': 1});
+    final encoded = utf8.encode(jsonEncode({...data, 'version': 1}));
     if (encoded.length > 262144) {
       return Future.error(StateError('Слишком много настроек'));
     }
     final operation = _pending.then((_) async {
       await file.parent.create(recursive: true);
-      await file.writeAsString(encoded, flush: true);
+      // Write beside the destination, then replace it on the same filesystem.
+      // A failed or interrupted write must not truncate the last valid settings.
+      final temporary = await file.parent.createTemp('.viora-write-');
+      final candidate = File('${temporary.path}/preferences.json');
+      try {
+        await candidate.writeAsBytes(encoded, flush: true);
+        for (var attempt = 0; ; attempt++) {
+          try {
+            await candidate.rename(file.path);
+            break;
+          } on FileSystemException catch (error) {
+            if (!Platform.isWindows ||
+                ![5, 32, 33].contains(error.osError?.errorCode) ||
+                attempt >= 10) {
+              rethrow;
+            }
+            // Readers and antivirus can retain the old Windows file handle
+            // beyond 100 ms. Back off for at most 1.8 seconds in total; an
+            // actual ACL failure still propagates with the prior file intact.
+            final delay = (20 * (1 << attempt)).clamp(20, 250);
+            await Future<void>.delayed(Duration(milliseconds: delay));
+          }
+        }
+      } finally {
+        if (await candidate.exists()) await candidate.delete();
+        await temporary.delete();
+      }
     });
     // A failed write must not prevent subsequent retries.
     _pending = operation.then<void>((_) {}, onError: (Object e) {});

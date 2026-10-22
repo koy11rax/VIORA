@@ -61,7 +61,15 @@ func (tunnelService) Execute(_ []string, requests <-chan svc.ChangeRequest, chan
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	sessions := &serviceSessions{}
-	go func() { defer close(done); serveBroker(listener, stop, sessions, run) }()
+	owners, err := installedOwnerStore()
+	if err != nil {
+		listener.Close()
+		return false, 3
+	}
+	go func() {
+		defer close(done)
+		serveBroker(listener, stop, sessions, runWithProtection, owners, systemProtection)
+	}()
 	current := svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	changes <- current
 	for {
@@ -149,7 +157,7 @@ func sessionPipe(name string, owner uint32) (*os.File, error) {
 	return pipe, nil
 }
 
-func serveBroker(listener *os.File, stop <-chan struct{}, sessions *serviceSessions, session func(io.ReadCloser, io.Writer)) {
+func serveBroker(listener *os.File, stop <-chan struct{}, sessions *serviceSessions, session func(io.ReadCloser, io.Writer, func(string) (bool, error)), owners ownerStore, system func(string) (bool, error)) {
 	handle := windows.Handle(listener.Fd())
 	for {
 		select {
@@ -186,9 +194,14 @@ func serveBroker(listener *os.File, stop <-chan struct{}, sessions *serviceSessi
 		var owner uint32
 		identityErr := windows.GetNamedPipeClientProcessId(handle, &owner)
 		line, readErr := bufio.NewReader(io.LimitReader(listener, 1024)).ReadString('\n')
+		var principal brokerPrincipal
+		if identityErr == nil && readErr == nil {
+			principal, identityErr = pipePrincipal(handle)
+		}
+		protection := ownedProtection{principal: principal, owners: owners, system: system}
 		response := "ERROR\n"
 		if identityErr == nil && readErr == nil && strings.HasPrefix(line, "PROTECTION ") {
-			response = protectionCommand(strings.TrimSpace(strings.TrimPrefix(line, "PROTECTION "))) + "\n"
+			response = protectionCommandWith(strings.TrimSpace(strings.TrimPrefix(line, "PROTECTION ")), protection.command) + "\n"
 		} else if identityErr == nil && readErr == nil {
 			sessions.mutex.Lock()
 			if sessions.active != nil {
@@ -201,7 +214,7 @@ func serveBroker(listener *os.File, stop <-chan struct{}, sessions *serviceSessi
 					response = "READY\n"
 					go func() {
 						defer sessions.wait.Done()
-						session(pipe, pipe)
+						session(pipe, pipe, protection.session)
 						pipe.Close()
 						sessions.mutex.Lock()
 						sessions.active = nil

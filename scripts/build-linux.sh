@@ -6,7 +6,7 @@ pkg-config --exists gtk+-3.0 libsecret-1 ayatana-appindicator3-0.1 || { echo 'In
 flutter pub get
 flutter analyze
 if [[ "${VIORA_SKIP_TESTS:-0}" != 1 ]]; then flutter test; fi
-flutter build linux --release --build-name "${VIORA_VERSION:-0.8.2}" --build-number 27
+flutter build linux --release --build-name "${VIORA_VERSION:-1.0.0}" --build-number "${VIORA_BUILD_NUMBER:-28}"
 ../../scripts/package-linux.sh
 echo 'Install the .deb package with your distribution package manager.'
 echo 'An unlocked Secret Service keyring is required for accounts and saved profiles.'

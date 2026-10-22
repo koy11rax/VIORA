@@ -36,40 +36,42 @@ class DesktopFrame extends StatelessWidget {
       (4, Icons.tune, 'Настройки'),
     ];
     Widget nav(int page, IconData icon, String label) => Padding(
-      padding: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: currentPage == page ? c.accent : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => onNavigate(page),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Icon(
-                    icon,
-                    size: 19,
-                    color: currentPage == page
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : c.ink,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: page == 5 ? 12 : 14,
-                        height: 1.5,
-                        color: currentPage == page
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : c.ink,
+        color: currentPage == page ? c.soft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: Semantics(
+          selected: currentPage == page,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onNavigate(page),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 19,
+                      color: currentPage == page ? c.accent : c.muted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: page == 5 ? 12 : 13,
+                          height: 1.5,
+                          color: currentPage == page ? c.ink : c.muted,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -85,52 +87,27 @@ class DesktopFrame extends StatelessWidget {
               children: [
                 Container(
                   key: const Key('approved-sidebar'),
-                  width: 204,
+                  width: 216,
                   decoration: BoxDecoration(
                     border: Border(right: BorderSide(color: c.line)),
                   ),
-                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 20),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 38),
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 28),
                         child: SizedBox(
                           height: 48,
                           child: Row(
                             children: [
-                              Transform.rotate(
-                                angle: -.122,
-                                child: Container(
-                                  width: 42,
-                                  height: 42,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: c.raised,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Text(
-                                    'V',
-                                    style: TextStyle(
-                                      fontSize: 30,
-                                      height: 1,
-                                      letterSpacing: -1.6,
-                                      fontWeight: FontWeight.w500,
-                                      color: c.accent,
-                                      shadows: [
-                                        Shadow(
-                                          color: c.line,
-                                          offset: const Offset(1, 2),
-                                        ),
-                                        Shadow(
-                                          color: Theme.of(
-                                            context,
-                                          ).scaffoldBackgroundColor,
-                                          offset: const Offset(2, 4),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(11),
+                                child: Image.asset(
+                                  'assets/viora.png',
+                                  width: 40,
+                                  height: 40,
+                                  excludeFromSemantics: true,
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -141,10 +118,10 @@ class DesktopFrame extends StatelessWidget {
                                   child: Text(
                                     'viora',
                                     style: TextStyle(
-                                      fontSize: 32,
+                                      fontSize: 29,
                                       height: 1.2,
                                       letterSpacing: -1.6,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -200,7 +177,7 @@ class DesktopFrame extends StatelessWidget {
                 ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(32, 26, 32, 32),
+                    padding: const EdgeInsets.fromLTRB(32, 20, 32, 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -242,7 +219,7 @@ class DesktopFrame extends StatelessWidget {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         if (warning != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),

@@ -349,7 +349,7 @@ class SettingsDetail extends StatelessWidget {
                   onPressed: () => showLicensePage(
                     context: context,
                     applicationName: 'Viora',
-                    applicationVersion: Platform.isAndroid ? '0.7.4' : '0.8.2',
+                    applicationVersion: '1.0.0',
                   ),
                   icon: const Icon(Icons.info_outline),
                   label: const Text('Лицензии компонентов'),

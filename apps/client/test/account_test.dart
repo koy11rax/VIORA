@@ -58,7 +58,7 @@ class TestAccountApi extends AccountApi {
 
 void main() {
   testWidgets(
-    'admin tab appears after verified owner restore and disappears on demotion',
+    'admin entry appears after verified owner restore and disappears on demotion',
     (tester) async {
       tester.view.physicalSize = const Size(700, 1400);
       tester.view.devicePixelRatio = 1;
@@ -86,18 +86,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Админ'), findsNothing);
+      expect(find.byTooltip('Администрирование'), findsNothing);
       await controller.complete('s' * 43);
       await tester.pumpAndSettle();
-      expect(find.text('Админ'), findsNothing);
+      expect(find.byTooltip('Администрирование'), findsNothing);
       api.owner = true;
       await controller.restore();
       await tester.pumpAndSettle();
-      expect(find.text('Админ'), findsOneWidget);
+      expect(find.byTooltip('Администрирование'), findsOneWidget);
       api.owner = false;
       await controller.restore();
       await tester.pumpAndSettle();
-      expect(find.text('Админ'), findsNothing);
+      expect(find.byTooltip('Администрирование'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

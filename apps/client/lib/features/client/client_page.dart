@@ -10,6 +10,7 @@ import 'routing_page.dart';
 import '../../data/control_api.dart';
 import '../../domain/control.dart';
 import '../../domain/profile.dart';
+import '../../domain/desktop_applications.dart';
 import '../../main.dart' show VioraPanel;
 import 'approved_content.dart';
 import 'import_dialog.dart';
@@ -102,9 +103,11 @@ class ClientState {
         .toSet();
     if (savedApps.length > 1000 ||
         savedApps.any(
-          (id) => !RegExp(
-            r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$',
-          ).hasMatch(id),
+          (id) => Platform.isWindows || Platform.isLinux
+              ? !DesktopApplications.valid(id, Platform.operatingSystem)
+              : !RegExp(
+                  r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$',
+                ).hasMatch(id),
         )) {
       throw const FormatException('Список приложений');
     }
@@ -167,6 +170,7 @@ class ClientPage extends StatefulWidget {
   final ValueChanged<Color> onAccent;
   final ValueChanged<int> onNavigate;
   final Future<void> Function(ControlRepository) onRepository;
+  final Future<ImportedConnection> Function(String)? loadSubscription;
   const ClientPage({
     super.key,
     required this.index,
@@ -176,6 +180,7 @@ class ClientPage extends StatefulWidget {
     required this.onAccent,
     required this.onNavigate,
     required this.onRepository,
+    this.loadSubscription,
     this.desktop = false,
     this.demo = false,
   });
@@ -265,13 +270,17 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     applyImport(value);
   }
 
-  void applyImport(ImportedConnection value, {bool silent = false}) {
+  bool applyImport(ImportedConnection value, {bool silent = false}) {
     final state = widget.state;
+    if (value.profiles.isEmpty) {
+      if (!silent) notice('В подписке нет поддерживаемых серверов');
+      return false;
+    }
     if (value.source != null &&
         !state.subscriptions.containsKey(value.source) &&
         state.subscriptions.length >= 200) {
-      notice('Можно сохранить до 200 подписок');
-      return;
+      if (!silent) notice('Можно сохранить до 200 подписок');
+      return false;
     }
     final oldLinks = state.subscriptions[value.source] ?? <String>[];
     final otherLinks = state.subscriptions.entries
@@ -290,8 +299,8 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
       if (links.add(p.toShareLink())) remaining.add(p);
     }
     if (remaining.length > 200) {
-      notice('Можно сохранить до 200 серверов');
-      return;
+      if (!silent) notice('Можно сохранить до 200 серверов');
+      return false;
     }
     final current =
         state.selectedProfile >= 0 &&
@@ -322,6 +331,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
         'Добавлено серверов: ${value.profiles.length}. Можно включать VPN.',
       );
     }
+    return true;
   }
 
   bool refreshing = false;
@@ -374,16 +384,33 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     if (!silent) notice('Обновляем подписки…');
     widget.state.lastSubscriptionRefresh = DateTime.now();
     try {
+      var updated = 0, failed = 0;
+      final load = widget.loadSubscription ?? SubscriptionImporter().load;
       for (final source in widget.state.subscriptions.keys.toList()) {
-        final result = await SubscriptionImporter().load(source);
-        if (!mounted) return;
-        applyImport(result, silent: silent);
+        try {
+          final result = await load(source);
+          if (!mounted) return;
+          if (result.source == source && applyImport(result, silent: true)) {
+            updated++;
+          } else {
+            failed++;
+          }
+        } catch (_) {
+          if (!mounted) return;
+          // One expired or unreachable provider must not block the others.
+          // Do not surface exception text: it may contain a secret URL.
+          failed++;
+        }
       }
-    } on FormatException catch (e) {
-      if (mounted && !silent) notice(e.message.toString());
-    } catch (_) {
-      if (mounted && !silent) {
-        notice('Не удалось обновить подписки. Прежние серверы сохранены.');
+      if (!silent) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        notice(
+          failed == 0
+              ? 'Подписки обновлены: $updated.'
+              : updated == 0
+              ? 'Не удалось обновить подписки. Прежние серверы сохранены.'
+              : 'Обновлено подписок: $updated. Не удалось обновить: $failed. Прежние серверы этих подписок сохранены.',
+        );
       }
     } finally {
       if (mounted) {

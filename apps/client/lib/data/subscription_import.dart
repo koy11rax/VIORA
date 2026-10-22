@@ -111,7 +111,7 @@ class SubscriptionImporter {
       return await (() async {
         final request = await client.getUrl(uri);
         request.followRedirects = false;
-        request.headers.set(HttpHeaders.userAgentHeader, 'Viora/0.5.0');
+        request.headers.set(HttpHeaders.userAgentHeader, 'Viora/1.0.0');
         request.headers.set(HttpHeaders.acceptHeader, 'text/plain');
         final deviceOs = const {
           'android': 'Android',

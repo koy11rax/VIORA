@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bundle="${1:-$root/apps/client/build/linux/x64/release/bundle}"
-version="${VIORA_VERSION:-0.8.2}"
+version="${VIORA_VERSION:-1.0.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version'; exit 1; }
 suffix="${VIORA_PACKAGE_SUFFIX:-}"
 [[ "$suffix" =~ ^[A-Za-z0-9_-]*$ ]] || { echo 'Invalid package suffix'; exit 1; }
@@ -66,6 +66,16 @@ VIORA Linux $version
 не запускалось и не проверялось. Сборка не является проверкой маршрутов
 или утечек. SHA-256 файл подтверждает целостность пакета, а не подпись издателя.
 EOF
+install -m644 "$root/docs/linux-install-variants-$version.md" "$stage/usr/lib/viora/READ-ME-RU.txt"
+install -m644 "$root/apps/client/assets/licenses/flutter_v2ray_client-MIT.txt" "$stage/usr/lib/viora/licenses/"
+cat > "$stage/usr/lib/viora/licenses/VIORA.txt" <<EOF
+Отдельная лицензия собственного кода VIORA пока не назначена.
+Публикация исходников сама по себе не предоставляет общую лицензию.
+LicenseRef-VIORA обозначает этот статус, а не лицензию сторонних компонентов.
+Сторонние лицензии: Xray MPL-2.0, Flutter BSD-3-Clause, flutter_v2ray_client MIT.
+Полный набор уведомлений Flutter расположен в data/flutter_assets/NOTICES.Z.
+Исходники клиента и закреплённого движка: Viora-Desktop-$version-source.zip.
+EOF
 printf '%s\n' 'Xray source: https://github.com/XTLS/Xray-core/tree/701af60772cda123492f86e383e1fdba066614a9' > "$stage/usr/lib/viora/licenses/Xray-source.txt"
 cat > "$stage/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
@@ -89,5 +99,5 @@ chmod 755 "$stage/DEBIAN/postrm"
 find "$stage" -type d -exec chmod 755 {} +
 find "$stage" -type f -exec chmod go-w {} +
 dpkg-deb -Zgzip -z6 --root-owner-group --build "$stage" "$output"
-sha256sum "$output" > "$output.sha256"
+(cd "$(dirname "$output")"; sha256sum "$(basename "$output")" > "$(basename "$output").sha256")
 echo "$output"

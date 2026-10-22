@@ -13,11 +13,12 @@ void main() {
     await tester.pumpWidget(const VioraApp());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    for (final page in ['Серверы', 'Подписка', 'Правила', 'Настройки']) {
+    for (final page in ['Серверы', 'Подписка', 'Настройки']) {
       await tester.tap(find.text(page).last);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: page);
     }
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
     for (final section in [
       'Соединение и защита',
       'DNS и IPv6',

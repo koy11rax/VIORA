@@ -1,16 +1,48 @@
-param([Parameter(Mandatory=$true)][string]$MsiPath,[Parameter(Mandatory=$true)][string]$BundlePath,[string]$InstallDirectory)
+param(
+    [Parameter(Mandatory=$true)][string]$MsiPath,
+    [Parameter(Mandatory=$true)][string]$BundlePath,
+    [string]$InstallDirectory,
+    [Parameter(DontShow=$true)][switch]$AdversarialCostingOnly
+)
 $ErrorActionPreference='Stop'
 $msi=(Resolve-Path -LiteralPath $MsiPath).Path
 $bundle=(Resolve-Path -LiteralPath $BundlePath).Path
 $installer=New-Object -ComObject WindowsInstaller.Installer
 $installer.UILevel=2
+# CostInitialize is not a repeatable reset of an already-costed MSI session.
+# Run the independent adversarial scenario in its own process/session instead.
+if ($AdversarialCostingOnly) {
+    $attackSession=$null
+    try {
+        $attackSession=$installer.OpenPackage($msi,1)
+        $attack='C:\Users\Public\Viora-Untrusted-Engine\'
+        $uiChoice='C:\Users\Public\Viora-Ui-Choice\'
+        $attackSession.Property('INSTALLDIR')=$uiChoice
+        foreach($id in @('ENGINEDIR','ENGINEPARENT','ENGINECORE','EngineDir','EngineParent','EngineCore')) { $attackSession.Property($id)=$attack }
+        foreach($action in @('CostInitialize','FileCost','FixEngineParent','FixEngineDir','FixEngineCore','CostFinalize')) {
+            if($attackSession.DoAction($action) -ne 1) { throw "Adversarial read-only costing failed: $action" }
+        }
+        if($attackSession.Property('EngineDir') -ne (Join-Path $env:ProgramFiles 'Viora\Engine\') -or $attackSession.Property('EngineCore') -ne (Join-Path $env:ProgramFiles 'Viora\Engine\core\') -or $attackSession.Property('INSTALLDIR') -ne $uiChoice) { throw 'Privileged MSI path override was accepted or UI choice changed' }
+        'Verified independent adversarial path costing: privileged files fixed; application destination preserved.'
+    } finally {
+        if ($null -ne $attackSession) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($attackSession) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) | Out-Null
+    }
+    return
+}
+$records=[Collections.Generic.List[object]]::new()
+$session=$null
+$db=$null
+try {
 $db=$installer.OpenDatabase($msi,0)
 function Rows([string]$Query) {
     $view=$db.OpenView($Query)
     try {
         $view.Execute() | Out-Null
-        while ($record=$view.Fetch()) { ,$record }
-    } finally { $view.Close() | Out-Null }
+        while ($record=$view.Fetch()) { $records.Add($record); ,$record }
+    } finally {
+        try { $view.Close() | Out-Null } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) | Out-Null }
+    }
 }
 $directories=@{}
 foreach ($row in (Rows 'SELECT * FROM `Directory`')) { $directories[$row.StringData(1)]=$row.StringData(2) }
@@ -51,12 +83,29 @@ for ($i=0;$i -lt $files.Count;$i++) {
 # Read-only standard actions: no installation, registry writes or elevation.
 $session=$installer.OpenPackage($msi,1)
 if ($InstallDirectory) { $session.Property('INSTALLDIR')=$InstallDirectory }
-foreach ($action in @('FindRelatedProducts','AppSearch','LaunchConditions','CostInitialize','FileCost','CostFinalize')) {
+foreach ($action in @('FindRelatedProducts','AppSearch','LaunchConditions','CostInitialize','FileCost','FixEngineParent','FixEngineDir','FixEngineCore','CostFinalize')) {
     if ($session.DoAction($action) -ne 1) { throw "MSI standard action failed: $action" }
 }
 $expected=if ($InstallDirectory) { $InstallDirectory.TrimEnd('\')+'\' } else { Join-Path $env:ProgramFiles 'Viora\' }
 if ($session.Property('INSTALLDIR') -ne $expected) { throw 'Unexpected install directory' }
-if ($session.Property('ENGINEDIR') -ne (Join-Path $env:ProgramFiles 'Viora\Engine\')) { throw 'Privileged component location must be fixed' }
+if ($session.Property('EngineDir') -ne (Join-Path $env:ProgramFiles 'Viora\Engine\')) { throw 'Privileged component location must be fixed' }
+foreach ($entry in @(
+ @('FixEngineParent','EngineParent','[ProgramFiles64Folder]Viora\'),
+ @('FixEngineDir','EngineDir','[ProgramFiles64Folder]Viora\Engine\'),
+ @('FixEngineCore','EngineCore','[ProgramFiles64Folder]Viora\Engine\core\')
+)) {
+ $reset=@(Rows 'SELECT * FROM `CustomAction`' | Where-Object {$_.StringData(1) -eq $entry[0]})
+ if($reset.Count -ne 1 -or $reset[0].IntegerData(2) -ne 51 -or $reset[0].StringData(3) -ne $entry[1] -or $reset[0].StringData(4) -ne $entry[2]) { throw 'Missing fixed privileged directory action' }
+ foreach ($table in @('InstallUISequence','InstallExecuteSequence')) {
+  $sequence=@(Rows ('SELECT * FROM `' + $table + '`') | Where-Object {$_.StringData(1) -eq $entry[0]})
+  if($sequence.Count -ne 1 -or $sequence[0].IntegerData(3) -le 900 -or $sequence[0].IntegerData(3) -ge 1000) { throw 'Unsafe fixed-path action sequence' }
+ }
+}
+# Adversarial read-only costing: legacy public properties and a private value
+# set by a UI session must not redirect privileged files to a writable folder.
+$powershell=(Get-Process -Id $PID).Path
+& $powershell -NoProfile -NonInteractive -File $PSCommandPath -MsiPath $msi -BundlePath $bundle -AdversarialCostingOnly
+if ($LASTEXITCODE -ne 0) { throw "Independent adversarial costing process failed: $LASTEXITCODE" }
 foreach ($row in (Rows 'SELECT * FROM `Shortcut`')) { if ($row.StringData(5) -ne '[INSTALLDIR]Viora.exe') { throw 'Shortcut must target the real executable' } }
 "Verified $($files.Count) payload hashes, directory tree, keypaths, OS requirements and install directory."
 "Extracted verification payload retained at $stage"
@@ -69,19 +118,25 @@ $serviceKey=$components[$serviceRow.StringData(12)]
 $serviceFile=@($files | Where-Object { $_.StringData(1) -eq $serviceKey })
 if ($serviceFile.Count -ne 1 -or $serviceFile[0].StringData(3).Split('|')[-1] -ne 'viora_tunnel.exe') { throw 'Service must use protected VPN helper' }
 $serviceComponent=@(Rows 'SELECT * FROM `Component`' | Where-Object { $_.StringData(1) -eq $serviceRow.StringData(12) })
-if ($serviceComponent[0].StringData(3) -ne 'ENGINEDIR') { throw 'Service must be in fixed protected Engine directory' }
+if ($serviceComponent[0].StringData(3) -ne 'EngineDir') { throw 'Service must be in fixed protected Engine directory' }
 $control=@(Rows 'SELECT * FROM `ServiceControl`')
 if ($control.Count -ne 1 -or $control[0].IntegerData(3) -ne 163 -or $control[0].IntegerData(5) -ne 1) { throw 'Service stop/start/uninstall actions missing' }
 $executeActions=@{}
 foreach ($entry in (Rows 'SELECT * FROM `InstallExecuteSequence`')) { $executeActions[$entry.StringData(1)]=$entry.IntegerData(3) }
 foreach ($action in @('StopServices','DeleteServices','InstallServices','StartServices')) { if (!$executeActions.ContainsKey($action)) { throw "Missing service action: $action" } }
 if ($executeActions['InstallServices'] -le $executeActions['InstallFiles'] -or $executeActions['StartServices'] -le $executeActions['InstallServices']) { throw 'Service actions ordered incorrectly' }
-'Verified protected automatic VPN service installation, startup, stop and removal.'
+'Verified protected VPN service metadata for automatic startup, stop and removal.'
 $firewall=@($files | Where-Object { $_.StringData(3).Split('|')[-1] -eq 'viora_firewall.exe' })
 if ($firewall.Count -eq 1) {
  $action=@(Rows 'SELECT * FROM `CustomAction`' | Where-Object { $_.StringData(1) -eq 'RemoveVioraProtection' })
  if ($action.Count -ne 1 -or $action[0].IntegerData(2) -ne 3090 -or $action[0].StringData(3) -ne $firewall[0].StringData(1) -or $action[0].StringData(4) -ne 'disable') { throw 'Invalid firewall removal action' }
  $sequence=@(Rows 'SELECT * FROM `InstallExecuteSequence`' | Where-Object { $_.StringData(1) -eq 'RemoveVioraProtection' })
  if ($sequence[0].StringData(2) -ne 'REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE' -or $sequence[0].IntegerData(3) -le $executeActions['StopServices'] -or $sequence[0].IntegerData(3) -ge $executeActions['RemoveFiles']) { throw 'Unsafe firewall removal sequence' }
- 'Verified firewall recovery on full uninstall and policy preservation on upgrade.'
+ 'Verified uninstall firewall recovery action and policy-preserving upgrade condition.'
+}
+} finally {
+    foreach ($record in $records) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) | Out-Null }
+    if ($null -ne $session) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($session) | Out-Null }
+    if ($null -ne $db) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($db) | Out-Null }
+    [Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) | Out-Null
 }

@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include "policy_validation.h"
 
 namespace {
 const GUID provider = {0x56a10110,0x8102,0x4c71,{0x91,0x28,0x66,0x12,0x45,0x56,0x00,0x01}};
@@ -138,7 +139,12 @@ int enabled(HANDLE h) {
   for(unsigned i=0;i<8;++i) {
     FWPM_FILTER0* f=nullptr;GUID k=key(i);
     DWORD e=FwpmFilterGetByKey0(h,&k,&f);
-    if(e==ERROR_SUCCESS) {++count;FwpmFreeMemory0(reinterpret_cast<void**>(&f));}
+    if(e==ERROR_SUCCESS) {
+      const bool valid = f && viora_firewall::expected_block_filter(*f, i, k, provider, sublayer);
+      if(f)FwpmFreeMemory0(reinterpret_cast<void**>(&f));
+      if(!valid)return -1;
+      ++count;
+    }
     else if(e!=FWP_E_FILTER_NOT_FOUND)return -1;
   }
   return count==8?1:count==0?0:-1;
@@ -164,5 +170,12 @@ int wmain(int argc,wchar_t** argv) {
   }
   if(!ok){FwpmTransactionAbort0(engine.h);return 6;}
   if(!check(FwpmTransactionCommit0(engine.h)))return 7;
+  // This directory is administrator protected. Clearing the policy through the
+  // emergency/uninstall path must also clear its persistent account marker;
+  // normal broker disable performs the same idempotent cleanup.
+  if(!on && !DeleteFileW((directory+L"\\protection-owner.sid").c_str())) {
+    const DWORD error=GetLastError();
+    if(error!=ERROR_FILE_NOT_FOUND)return 8;
+  }
   puts(on?"ON":"OFF");return 0;
 }

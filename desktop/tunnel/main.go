@@ -48,6 +48,10 @@ func verifiedFile(path, expected string) bool {
 }
 
 func run(input io.ReadCloser, output io.Writer) {
+	runWithProtection(input, output, systemProtection)
+}
+
+func runWithProtection(input io.ReadCloser, output io.Writer, protection func(string) (bool, error)) {
 	defer input.Close()
 	encoder := json.NewEncoder(output)
 	protected := false
@@ -92,13 +96,13 @@ func run(input io.ReadCloser, output io.Writer) {
 		return
 	}
 	defer release()
-	protected, err = systemProtection("status")
+	protected, err = protection("status")
 	if err != nil {
 		fail("protection_failed")
 		return
 	}
 	if strict && !protected {
-		protected, err = systemProtection("enable")
+		protected, err = protection("enable")
 		if err != nil || !protected {
 			fail("protection_failed")
 			return
@@ -164,7 +168,10 @@ func run(input io.ReadCloser, output io.Writer) {
 	stop := make(chan struct{}, 1)
 	go func() {
 		// EOF, UI crash, pipe loss and explicit disconnect all stop the privileged child.
-		_, _ = reader.ReadString('\n')
+		// A local pipe client must not grow a privileged service buffer without
+		// bound by streaming an unterminated stop command. Any input or EOF is
+		// sufficient to end this session; the command is not a general RPC API.
+		_, _ = reader.ReadSlice('\n')
 		stop <- struct{}{}
 	}()
 	interrupt := func() {

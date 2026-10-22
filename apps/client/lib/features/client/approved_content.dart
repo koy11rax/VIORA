@@ -243,183 +243,322 @@ class ApprovedContent extends StatelessWidget {
 
   Widget home(BuildContext context) {
     final c = VioraColors(context);
-    final hero = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'На своей\nволне.',
-          style: TextStyle(
-            fontSize: 44,
-            height: 1.08,
-            letterSpacing: -1.3,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        gap(12),
-        Text('Твой интернет. Твои правила.', style: TextStyle(color: c.muted)),
-        gap(24),
-        Center(
-          child: Column(
+    final phase = state.tunnel.phase;
+    final active = phase == TunnelPhase.active;
+    final starting =
+        phase == TunnelPhase.connecting || phase == TunnelPhase.permission;
+    final stopping = phase == TunnelPhase.stopping;
+    final failed = phase == TunnelPhase.failed;
+    final strict =
+        state.tunnel.stats.lockdown || state.protectionStatus == 'on';
+    final selected = state.selectedProfile;
+    final latency = selected >= 0 && selected < state.profiles.length
+        ? state.latency[state.profiles[selected].toShareLink()]
+        : null;
+    String bytes(int value) => value >= 1073741824
+        ? '${(value / 1073741824).toStringAsFixed(1)} ГБ'
+        : '${(value / 1048576).toStringAsFixed(1)} МБ';
+    final action = stopping
+        ? 'Отключаем…'
+        : starting
+        ? state.tunnel.busy
+              ? 'Подключаем…'
+              : 'Отменить подключение'
+        : active
+        ? 'Отключиться'
+        : 'Подключиться';
+    final allowAction = state.tunnel.busy ? null : onConnect;
+    final protection = strict
+        ? 'Системная блокировка вне VPN включена.'
+        : active
+        ? 'Туннель запущен. Доступность сайтов можно проверить в браузере.'
+        : 'VPN выключен. Подключись, чтобы направить трафик через сервер.';
+    final connection = DesignCard(
+      padding: 22,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PowerOrbit(onPressed: onConnect),
-              gap(10),
-              Text(
-                state.tunnel.label,
-                style: const TextStyle(
-                  fontSize: 20,
-                  letterSpacing: -.4,
-                  fontWeight: FontWeight.w500,
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: failed
+                      ? Theme.of(context).colorScheme.error
+                      : active || starting
+                      ? c.accent
+                      : c.muted,
                 ),
               ),
-              gap(6),
-              Text(
-                state.tunnel.phase == TunnelPhase.active
-                    ? 'Туннель запущен · ${state.tunnel.activeProfile ?? 'Android VPN'}'
-                    : state.tunnel.error ?? 'Выбери сервер и включи VPN',
-                style: TextStyle(fontSize: 12, color: c.muted),
-                textAlign: TextAlign.center,
-              ),
-              gap(22),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 280),
-                child: fullButton(
-                  state.tunnel.running ? 'Отключиться' : 'Подключиться',
-                  onConnect,
-                  primary: true,
-                  icon: state.tunnel.running
-                      ? Icons.power_settings_new
-                      : Icons.shield_outlined,
-                ),
-              ),
-              gap(12),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      textStyle: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    onPressed: refreshing ? null : onRefresh,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: Text(
-                      refreshing ? 'Обновляем…' : 'Обновить подписку',
-                    ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  state.tunnel.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: failed
+                        ? Theme.of(context).colorScheme.error
+                        : active
+                        ? c.accent
+                        : c.muted,
                   ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      textStyle: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    onPressed: measuring ? null : onPing,
-                    icon: const Icon(Icons.speed, size: 16),
-                    label: Text(measuring ? 'Проверяем…' : 'Проверить пинг'),
-                  ),
-                ],
-              ),
-              if (state.selectedProfile >= 0 &&
-                  state.selectedProfile < state.profiles.length &&
-                  state.latency[state.profiles[state.selectedProfile]
-                          .toShareLink()] !=
-                      null)
-                Text(
-                  'TCP · ${state.latency[state.profiles[state.selectedProfile].toShareLink()]} мс',
-                  style: TextStyle(fontSize: 12, color: c.muted),
                 ),
+              ),
             ],
           ),
-        ),
-        gap(20),
-        Divider(color: c.line, height: 1),
-        gap(18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            for (final item in [
-              [
-                'Время',
-                state.tunnel.phase == TunnelPhase.active
-                    ? state.tunnel.stats.duration
-                    : '—',
-              ],
-              ['Сервер', selectedName],
-              [
-                'Трафик',
-                state.tunnel.phase == TunnelPhase.active
-                    ? '${((state.tunnel.stats.upload + state.tunnel.stats.download) / 1048576).toStringAsFixed(1)} МБ'
-                    : '—',
-              ],
-            ])
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item[0],
-                      style: TextStyle(fontSize: 11, color: c.muted),
-                    ),
-                    gap(4),
-                    Text(
-                      item[1],
-                      style: const TextStyle(fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+          gap(14),
+          Center(
+            child: PowerOrbit(
+              onPressed: allowAction,
+              size: MediaQuery.sizeOf(context).width < 600 ? 152 : 176,
+              active: active,
+              connecting: starting,
+              stopping: stopping,
+              failed: failed,
+              motion: state.motion,
+            ),
+          ),
+          gap(12),
+          Text(
+            selectedName,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -.5,
+            ),
+          ),
+          gap(6),
+          Text(
+            selectedProtocol,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: c.muted, height: 1.5),
+          ),
+          if (state.tunnel.error != null) ...[
+            gap(12),
+            Text(
+              state.tunnel.error!,
+              key: const Key('home-tunnel-error'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 12,
+                height: 1.5,
               ),
+            ),
           ],
-        ),
-      ],
-    );
-    final right = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        provider(context),
-        gap(),
-        DesignCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          gap(20),
+          FilledButton.icon(
+            onPressed: allowAction,
+            icon: Icon(
+              active || starting
+                  ? Icons.power_settings_new
+                  : Icons.shield_outlined,
+              size: 18,
+            ),
+            label: Text(action),
+          ),
+          gap(10),
+          Row(
             children: [
-              Text(
-                'ВЫБРАННЫЙ ПРОФИЛЬ',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1.3,
-                  color: c.muted,
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    textStyle: Theme.of(
+                      context,
+                    ).textTheme.labelLarge?.copyWith(fontSize: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  onPressed: refreshing ? null : onRefresh,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: Text(
+                    refreshing ? 'Обновляем…' : 'Обновить подписку',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
-              gap(),
-              Row(
-                children: [
-                  serverIcon(context),
-                  const SizedBox(width: 12),
-                  Expanded(
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    textStyle: Theme.of(
+                      context,
+                    ).textTheme.labelLarge?.copyWith(fontSize: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  onPressed: measuring ? null : onPing,
+                  icon: const Icon(Icons.speed, size: 16),
+                  label: Text(
+                    measuring ? 'Проверяем…' : 'Проверить пинг',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          gap(20),
+          Divider(color: c.line, height: 1),
+          gap(18),
+          Row(
+            children: [
+              for (final item in [
+                (
+                  'Время',
+                  active ? state.tunnel.stats.duration : '—',
+                  Icons.schedule,
+                ),
+                (
+                  'Получено',
+                  active ? bytes(state.tunnel.stats.download) : '—',
+                  Icons.south_west,
+                ),
+                (
+                  'Передано',
+                  active ? bytes(state.tunnel.stats.upload) : '—',
+                  Icons.north_east,
+                ),
+              ])
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        title(selectedName),
-                        gap(4),
-                        Text(
-                          '$selectedProtocol\n${state.isVioraProfile(state.selectedProfile) ? 'Viora VPN' : 'Личный импорт'}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.5,
-                            color: c.muted,
+                        Row(
+                          children: [
+                            Icon(item.$3, size: 12, color: c.muted),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                item.$1,
+                                style: TextStyle(fontSize: 11, color: c.muted),
+                              ),
+                            ),
+                          ],
+                        ),
+                        gap(7),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            item.$2,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              letterSpacing: -.4,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
+                ),
+            ],
+          ),
+          if (latency != null) ...[
+            gap(16),
+            Text(
+              'TCP · $latency мс',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: c.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+    final indices = <int>[
+      if (selected >= 0 && selected < state.profiles.length) selected,
+      for (var i = 0; i < state.profiles.length; i++)
+        if (i != selected) i,
+    ].take(3);
+    final side = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DesignCard(
+          padding: 20,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Серверы',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onNavigate(1),
+                    child: const Text('Все серверы'),
+                  ),
                 ],
               ),
-              gap(),
+              if (indices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.dns_outlined, color: c.accent, size: 28),
+                      gap(12),
+                      Text(
+                        'Добавь свой первый сервер',
+                        style: TextStyle(color: c.ink),
+                      ),
+                      gap(6),
+                      Text(
+                        'Импортируй подписку из бота или ссылку VLESS.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.muted,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              for (final i in indices)
+                ListTile(
+                  key: ValueKey('home-server-$i'),
+                  contentPadding: EdgeInsets.zero,
+                  minVerticalPadding: 10,
+                  leading: Icon(
+                    i == selected
+                        ? Icons.radio_button_checked
+                        : Icons.dns_outlined,
+                    color: i == selected ? c.accent : c.muted,
+                    size: 20,
+                  ),
+                  title: Text(
+                    state.profiles[i].name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'VLESS · ${state.profiles[i].transport.toUpperCase()}',
+                      style: TextStyle(fontSize: 11, color: c.muted),
+                    ),
+                  ),
+                  trailing:
+                      state.latency[state.profiles[i].toShareLink()] != null
+                      ? Text(
+                          '${state.latency[state.profiles[i].toShareLink()]} мс',
+                          style: TextStyle(fontSize: 12, color: c.muted),
+                        )
+                      : const Icon(Icons.chevron_right, size: 18),
+                  onTap: onSelectServer == null
+                      ? () => onNavigate(1)
+                      : () => onSelectServer!(i),
+                ),
               fullButton(
                 'Выбрать сервер',
                 () => onNavigate(1),
@@ -428,45 +567,165 @@ class ApprovedContent extends StatelessWidget {
             ],
           ),
         ),
-        gap(),
+        gap(18),
+        DesignCard(
+          padding: 20,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Твой маршрут',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              gap(18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(Icons.devices_outlined, color: c.muted),
+                  Expanded(
+                    child: Divider(color: c.line, indent: 12, endIndent: 12),
+                  ),
+                  Icon(Icons.shield_outlined, color: c.accent),
+                  Expanded(
+                    child: Divider(color: c.line, indent: 12, endIndent: 12),
+                  ),
+                  Icon(Icons.public, color: c.muted),
+                ],
+              ),
+              gap(16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Icon(Icons.route_outlined, size: 18, color: c.muted),
+                title: Text(
+                  'Правила: ${state.rules.where((rule) => rule.enabled).length}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => onNavigate(3),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Icon(Icons.apps, size: 18, color: c.muted),
+                title: Text(
+                  state.appMode == 'all'
+                      ? 'Все приложения через VPN'
+                      : 'Выбрано приложений: ${state.applications.length}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => onNavigate(6),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final expires = state.account.value?.expires?.toLocal();
+    final subscription = DesignCard(
+      padding: 18,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final label = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'VIORA VPN',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              gap(4),
+              Text(
+                expires != null
+                    ? 'Подписка до ${expires.day}.${expires.month}.${expires.year}'
+                    : state.hasVioraSubscription
+                    ? 'Подписка импортирована · ${state.vioraProfileIndices.length} серверов'
+                    : 'Свяжи Telegram или добавь свою подписку',
+                style: TextStyle(fontSize: 12, color: c.muted),
+              ),
+            ],
+          );
+          final renew = OutlinedButton.icon(
+            onPressed: () => openRenewal(context),
+            icon: const Icon(Icons.autorenew, size: 17),
+            label: const Text('Продлить подписку'),
+          );
+          return constraints.maxWidth < 430
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [label, gap(14), renew],
+                )
+              : Row(
+                  children: [
+                    Icon(Icons.confirmation_number_outlined, color: c.accent),
+                    const SizedBox(width: 14),
+                    Expanded(child: label),
+                    const SizedBox(width: 16),
+                    renew,
+                  ],
+                );
+        },
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Обзор',
+                style: TextStyle(
+                  fontSize: 27,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.7,
+                ),
+              ),
+              SizedBox(height: 7),
+              Text('Твой интернет. Твои правила.'),
+            ],
+          ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth >= 690
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 11, child: connection),
+                    const SizedBox(width: 18),
+                    Expanded(flex: 10, child: side),
+                  ],
+                )
+              : Column(children: [connection, gap(18), side]),
+        ),
+        gap(18),
+        subscription,
+        gap(14),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.shield_outlined, size: 19, color: c.muted),
-            const SizedBox(width: 10),
+            Icon(
+              strict ? Icons.verified_user_outlined : Icons.shield_outlined,
+              size: 17,
+              color: c.muted,
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
-                state.tunnel.stats.lockdown
-                    ? 'Android блокирует соединения вне VPN. Строгая системная защита включена.'
-                    : Platform.isAndroid
-                    ? 'Защита действует во время VPN-сессии. Постоянный VPN и блокировку вне VPN можно включить в настройках Android.'
-                    : 'Защита действует во время VPN-сессии. Постоянная блокировка вне VPN пока недоступна.',
-                style: TextStyle(fontSize: 12, height: 1.5, color: c.muted),
+                protection,
+                style: TextStyle(fontSize: 12, color: c.muted, height: 1.5),
               ),
             ),
           ],
         ),
         TextButton(
           onPressed: onImport,
-          style: TextButton.styleFrom(
-            alignment: Alignment.centerLeft,
-            padding: EdgeInsets.zero,
-          ),
+          style: TextButton.styleFrom(alignment: Alignment.centerLeft),
           child: const Text('+ Импортировать сервер или подписку'),
         ),
       ],
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth >= 650
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 105, child: hero),
-                const SizedBox(width: 28),
-                Expanded(flex: 100, child: right),
-              ],
-            )
-          : Column(children: [hero, gap(28), right]),
     );
   }
 

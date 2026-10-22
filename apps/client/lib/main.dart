@@ -218,13 +218,13 @@ class _VioraAppState extends State<VioraApp> {
         : accent.toARGB32() == 0xffc6a7ff
         ? const Color(0xff7040d6)
         : Color.lerp(accent, const Color(0xff221c35), .48)!;
-    final ink = dark ? const Color(0xfff4f1fc) : const Color(0xff221c35);
-    final line = dark ? const Color(0xff3c354b) : const Color(0xffded8e9);
+    final ink = dark ? const Color(0xfff3f2f6) : const Color(0xff221c35);
+    final line = dark ? const Color(0xff303035) : const Color(0xffded8e9);
     final soft = accent.toARGB32() == 0xffc6a7ff
         ? (dark ? const Color(0xff34264c) : const Color(0xffe9ddff))
         : Color.lerp(
             accent,
-            dark ? const Color(0xff111016) : Colors.white,
+            dark ? const Color(0xff111113) : Colors.white,
             dark ? .80 : .88,
           )!;
     final scheme =
@@ -236,10 +236,10 @@ class _VioraAppState extends State<VioraApp> {
           onPrimary: dark ? const Color(0xff24113e) : Colors.white,
           primaryContainer: soft,
           onPrimaryContainer: primary,
-          surface: dark ? const Color(0xff1d1b25) : Colors.white,
+          surface: dark ? const Color(0xff1a1a1e) : Colors.white,
           onSurface: ink,
           onSurfaceVariant: dark
-              ? const Color(0xffb4abc5)
+              ? const Color(0xffaaa9b3)
               : const Color(0xff655c76),
           outline: line,
           outlineVariant: line,
@@ -276,7 +276,7 @@ class _VioraAppState extends State<VioraApp> {
             ),
           ),
       scaffoldBackgroundColor: dark
-          ? Color(clientState.neutral ? 0xff111115 : 0xff111016)
+          ? Color(clientState.neutral ? 0xff111115 : 0xff111113)
           : Color(clientState.neutral ? 0xfff4f4f6 : 0xfff4f2fa),
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
@@ -286,7 +286,7 @@ class _VioraAppState extends State<VioraApp> {
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(
-        color: dark ? const Color(0xff1d1b25) : Colors.white,
+        color: dark ? const Color(0xff1a1a1e) : Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(clientState.radius),
@@ -295,7 +295,7 @@ class _VioraAppState extends State<VioraApp> {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: dark ? const Color(0xff272431) : Colors.white,
+        fillColor: dark ? const Color(0xff232327) : Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -470,6 +470,7 @@ class _VioraShellState extends State<VioraShell> {
     'Правила',
     'Настройки',
   ];
+  static const mobilePages = [0, 1, 2, 4];
   static const icons = [
     Icons.power_settings_new,
     Icons.dns_outlined,
@@ -629,19 +630,16 @@ class _VioraShellState extends State<VioraShell> {
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
-              selectedIndex: index == 5 && owner
-                  ? 5
-                  : index < 5
-                  ? index
-                  : 4,
-              onDestinationSelected: (i) => setState(() => index = i),
+              selectedIndex: mobilePages.contains(index)
+                  ? mobilePages.indexOf(index)
+                  : 3,
+              onDestinationSelected: (i) =>
+                  setState(() => index = mobilePages[i]),
               destinations: [
-                for (var i = 0; i < 5; i++)
-                  NavigationDestination(icon: Icon(icons[i]), label: titles[i]),
-                if (owner)
-                  const NavigationDestination(
-                    icon: Icon(Icons.admin_panel_settings_outlined),
-                    label: 'Админ',
+                for (final page in mobilePages)
+                  NavigationDestination(
+                    icon: Icon(icons[page]),
+                    label: titles[page],
                   ),
               ],
             ),

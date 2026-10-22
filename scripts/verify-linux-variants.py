@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 
@@ -11,7 +12,9 @@ import subprocess
 os.umask(0o022)
 
 repo = Path(__file__).resolve().parent.parent
-version = '0.8.2'
+version = os.environ.get('VIORA_VERSION', '1.0.0')
+if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+    raise ValueError('Invalid version')
 work = repo / 'artifacts' / f'linux-variants-{version}'
 baseline = work / 'payload'
 
@@ -47,24 +50,39 @@ def snapshot(root):
 
 expected = snapshot(baseline)
 assert expected
-report = {'version': version, 'runtimeTests': 'not-run-at-owner-request', 'packages': {}}
+report = {'version': version, 'runtimeTests': 'vpn-and-firewall-not-run', 'packages': {}}
 for kind, name in [
+    ('deb', f'Viora-Linux-{version}-amd64.deb'),
     ('rpm', f'Viora-Linux-{version}-1.x86_64.rpm'),
     ('arch', f'viora-bin-{version}-1-x86_64.pkg.tar.zst'),
 ]:
     package = repo / 'artifacts' / name
     dest = work / f'verified-{kind}'
     dest.mkdir()  # Never overwrite a prior verification tree.
-    for entry in run('bsdtar', '-tf', str(package)).splitlines():
-        relative = Path(entry)
-        if relative.is_absolute() or '..' in relative.parts:
-            raise ValueError(f'Unsafe archive path: {entry}')
-    subprocess.run(['bsdtar', '-xf', str(package), '-C', str(dest)], check=True)
+    if kind == 'deb':
+        subprocess.run(['dpkg-deb', '-x', str(package), str(dest)], check=True)
+    else:
+        for entry in run('bsdtar', '-tf', str(package)).splitlines():
+            relative = Path(entry)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError(f'Unsafe archive path: {entry}')
+        subprocess.run(['bsdtar', '-xf', str(package), '-C', str(dest)], check=True)
     actual = {n: v for n, v in snapshot(dest).items() if n.startswith('usr/')}
     if actual != expected:
         raise ValueError(f'{kind}: payload differs from the verified binary source')
-    if kind == 'rpm':
-        assert run('rpm', '-qp', '--qf', '%{NAME} %{VERSION} %{ARCH}', str(package)) == 'viora 0.8.2 x86_64'
+    if kind == 'deb':
+        metadata = run('dpkg-deb', '-f', str(package), 'Package', 'Version', 'Architecture', 'Depends')
+        assert run('dpkg-deb', '-f', str(package), 'Package') == 'viora'
+        assert run('dpkg-deb', '-f', str(package), 'Version') == version
+        assert run('dpkg-deb', '-f', str(package), 'Architecture') == 'amd64'
+        controls = work / 'verified-deb-controls'
+        subprocess.run(['dpkg-deb', '-e', str(package), str(controls)], check=True)
+        assert '--protection recover' in (controls / 'prerm').read_text()
+        assert '--protection enable' not in (controls / 'postinst').read_text()
+        listing = run('dpkg-deb', '-c', str(package))
+        assert all('root/root' in line for line in listing.splitlines())
+    elif kind == 'rpm':
+        assert run('rpm', '-qp', '--qf', '%{NAME} %{VERSION} %{ARCH}', str(package)) == f'viora {version} x86_64'
         scripts = run('rpm', '-qp', '--scripts', str(package))
         assert '--protection recover' in scripts and 'daemon-reload' in scripts
         assert '--protection enable' not in scripts and '--restore-protection' not in scripts
@@ -77,7 +95,7 @@ for kind, name in [
         assert 'digests OK' in check
     else:
         metadata = run('pacman', '-Qip', str(package))
-        assert 'viora-bin' in metadata and '0.8.2-1' in metadata
+        assert 'viora-bin' in metadata and f'{version}-1' in metadata
         assert (dest / '.MTREE').is_file() and (dest / '.BUILDINFO').is_file()
         info = (dest / '.PKGINFO').read_text()
         assert 'arch = x86_64' in info and 'depend = systemd' in info

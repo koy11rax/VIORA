@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$BundlePath,
-    [string]$OutputName = 'Viora-Windows-0.8.2'
+    [string]$OutputName = 'Viora-Windows-1.0.0'
 )
 $ErrorActionPreference = 'Stop'
 $vioraRoot = Split-Path $PSScriptRoot -Parent
@@ -30,9 +30,9 @@ New-Item -ItemType Directory -Path $vioraLicenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\xray-main\Xray-core-701af60772cda123492f86e383e1fdba066614a9\LICENSE') -Destination (Join-Path $vioraLicenses 'Xray-MPL-2.0.txt')
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\wintun\wintun\LICENSE.txt') -Destination (Join-Path $vioraLicenses 'Wintun-LICENSE.txt')
 @'
-VIORA Windows 0.8.2
+VIORA Windows 1.0.0
 
-Запусти установщик Viora-Windows-0.8.2-Setup.exe. Он позволяет выбрать папку
+Запусти установщик Viora-Windows-1.0.0-Setup.exe. Он позволяет выбрать папку
 приложения и один раз устанавливает защищённую службу VPN. При последующих
 подключениях и смене серверов повторный запрос администратора не требуется.
 

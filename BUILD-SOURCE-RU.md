@@ -1,12 +1,12 @@
-# Сборка VIORA Desktop 0.8.2
+# Сборка VIORA Desktop 1.0.0
 
 Исходники относятся к Windows и Linux. Серверная часть, аккаунты пользователей,
 подписки, базы, SSH-ключи, ключи подписи и локальные настройки SDK не включены.
-Android APK 0.7.4 остаётся отдельным неизменённым выпуском.
+Android 1.0.0 (28) собирается из того же клиентского исходного состояния.
 
 ## Инструменты
 
-Flutter 3.35.5 / Dart 3.9.2, Go 1.27.2; Windows — Visual Studio с C++ и Windows SDK;
+Flutter 3.35.5 / Dart 3.9.2, Go 1.27.3; Windows — Visual Studio с C++ и Windows SDK;
 Linux — clang, cmake, ninja, pkg-config, GTK 3, libsecret и
 libayatana-appindicator3 development packages. Linux-сборка выполнена на Ubuntu 22.04.
 
@@ -23,18 +23,18 @@ toolchains/xray-main, сохранив исходное имя каталога 
    GoDirectory, Platforms windows. Параметр SkipTests отключает проверки запуска
    движка. Для официального Go proxy при необходимости используй настроенный
    GOPROXY; проверка go.sum должна оставаться включённой.
-3. Собери Flutter windows --release --build-name 0.8.2 --build-number 27.
+3. Собери Flutter windows --release --build-name 1.0.0 --build-number 28.
    Flutter 3.35.5 не выбирает Visual Studio 18 2026 автоматически. На таком хосте
    после генерации Flutter-метаданных используй CMake с генератором
    Visual Studio 18 2026 и параметром FLUTTER_TARGET_PLATFORM=windows-x64.
    Задай отдельный CMAKE_INSTALL_PREFIX для комплекта. Перед target INSTALL
    создай apps/client/build/native_assets/windows, если он отсутствует.
 4. scripts/prepare-windows-bundle.ps1 формирует комплект, затем
-   scripts/build-windows-msi.ps1 создаёт MSI. Передай версию 0.8.2 и уникальное
+   scripts/build-windows-msi.ps1 создаёт MSI. Передай версию 1.0.0 и уникальное
    имя выходного комплекта. Пути локального CRT в скрипте требуют адаптации
    под установленный Visual Studio.
 5. desktop/windows/setup/CMakeLists.txt создаёт EXE из MSI. Параметры:
-   VIORA_MSI, VIORA_ICON и VIORA_VERSION=0.8.2. EXE/MSI не подписаны издателем.
+   VIORA_MSI, VIORA_ICON и VIORA_VERSION=1.0.0. EXE/MSI не подписаны издателем.
    scripts/verify-windows-msi.ps1 проверяет содержимое без установки и VPN.
 
 ## Linux
@@ -42,7 +42,7 @@ toolchains/xray-main, сохранив исходное имя каталога 
 1. Собери native core/helper с Platforms linux на Windows либо эквивалентными
    Go-командами. Хеш ядра передаётся помощнику через main.coreSHA; root-owned
    помощник проверяет бинарник перед запуском.
-2. scripts/build-linux.sh собирает UI и `.deb`. Передай VIORA_VERSION=0.8.2;
+2. scripts/build-linux.sh собирает UI и `.deb`. Передай VIORA_VERSION=1.0.0;
    VIORA_SKIP_TESTS=1 отключает тесты. Сам скрипт сборки не подключает VPN.
 3. Пакет устанавливается пользователем через apt install ./<пакет>.deb.
    Во время этой разработки установка на основной машине не выполнялась.

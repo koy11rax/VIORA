@@ -35,11 +35,12 @@ class TunnelStats {
 TunnelEngine platformTunnelEngine() =>
     Platform.isAndroid ? AndroidXrayEngine() : DesktopXrayEngine();
 
-class DesktopXrayEngine implements TunnelEngine {
+class DesktopXrayEngine implements TunnelEngine, DisposableTunnelEngine {
   static const channel = MethodChannel('dev.viora/platform');
   final _events = StreamController<TunnelStats>.broadcast();
   Timer? _poll;
   bool _polling = false, _initialized = false;
+  bool _disposed = false, _reportedPollFailure = false;
   Process? _process;
   TunnelConfig? _wanted;
   String _wantedName = '';
@@ -51,7 +52,8 @@ class DesktopXrayEngine implements TunnelEngine {
 
   bool _recover(String? code) {
     final config = _wanted;
-    if (config == null ||
+    if (_disposed ||
+        config == null ||
         !config.reconnect ||
         !{
           'core_exited',
@@ -111,20 +113,27 @@ class DesktopXrayEngine implements TunnelEngine {
   Stream<TunnelStats> get events => _events.stream;
   @override
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized || _disposed) return;
     _initialized = true;
     if (Platform.isWindows) {
       _poll = Timer.periodic(const Duration(milliseconds: 200), (_) async {
-        if (_polling) return;
+        if (_polling || _disposed) return;
         _polling = true;
         try {
           final lines = await channel.invokeMethod<String>('desktopTunnelPoll');
+          if (_disposed) return;
+          _reportedPollFailure = false;
           for (final line in const LineSplitter().convert(lines ?? '')) {
             _receive(line);
           }
         } catch (_) {
-          _events.add(const TunnelStats('FAILED', errorCode: 'ipc_failed'));
-          _poll?.cancel();
+          // A temporary IPC error must not permanently disconnect the UI
+          // from native status. Report uncertainty once and keep observing;
+          // later connect/stop acknowledgements still need this channel.
+          if (!_disposed && !_reportedPollFailure) {
+            _reportedPollFailure = true;
+            _events.add(const TunnelStats('FAILED', errorCode: 'ipc_failed'));
+          }
         } finally {
           _polling = false;
         }
@@ -133,6 +142,7 @@ class DesktopXrayEngine implements TunnelEngine {
   }
 
   void _receive(String line) {
+    if (_disposed) return;
     try {
       if (line.length > 4096) throw const FormatException();
       final data = jsonDecode(line) as Map<String, dynamic>;
@@ -173,6 +183,8 @@ class DesktopXrayEngine implements TunnelEngine {
   Future<bool> requestPermission() async => supported;
   @override
   Future<void> start(TunnelConfig config, String name) async {
+    if (_disposed) return;
+    _reportedPollFailure = false;
     _retryTimer?.cancel();
     _wanted = config;
     _wantedName = name;
@@ -249,7 +261,9 @@ class DesktopXrayEngine implements TunnelEngine {
           },
           onError: (Object _) {
             terminal = true;
-            _events.add(const TunnelStats('FAILED', errorCode: 'ipc_failed'));
+            if (!_disposed) {
+              _events.add(const TunnelStats('FAILED', errorCode: 'ipc_failed'));
+            }
             if (!outputDone.isCompleted) outputDone.complete();
           },
         );
@@ -295,6 +309,21 @@ class DesktopXrayEngine implements TunnelEngine {
       _receive('{"state":"DISCONNECTED"}');
     }
   }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _wanted = null;
+    _poll?.cancel();
+    _retryTimer?.cancel();
+    // Release UI observers only. Closing a screen must not stop a VPN service.
+    await _events.close();
+  }
+}
+
+abstract interface class DisposableTunnelEngine {
+  Future<void> dispose();
 }
 
 abstract interface class TunnelEngine {
@@ -612,6 +641,9 @@ class TunnelController extends ChangeNotifier {
     _disposed = true;
     _deadline?.cancel();
     _subscription?.cancel();
+    if (engine case final DisposableTunnelEngine disposable) {
+      unawaited(disposable.dispose());
+    }
     // The foreground service outlives the screen; closing UI must not silently stop VPN.
     super.dispose();
   }

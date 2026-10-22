@@ -1,7 +1,7 @@
 name: viora_client
 description: "Viora VPN — Android-first client and owner cabinet."
 publish_to: 'none'
-version: 0.7.4+24
+version: 1.0.0+28
 
 environment:
   sdk: ^3.9.2

@@ -55,3 +55,12 @@ uses its own owned/cancelled status stream and does not use upstream Dart URL
 parsers or implicit configuration generation. Configuration travels in explicit
 service intents and is encrypted locally for restart; profile storage also uses
 Android Keystore. No configuration is written to logs or Android backups.
+
+## Audited native bridge — 2026-10-22
+
+The active source-built AAR pin is now
+7c7028f5eac63f429507549ed081cf39cc68ece8d3fc355721922392b1823afb.
+It includes synchronized running/statistics access and cleanup of partially
+started core instances. The Java getIsRunning method used here was inspected
+in the newly built classes.jar and retains its signature. See
+../androidlibxraylite/VIORA-SOURCE.md for source changes, provenance and limits.

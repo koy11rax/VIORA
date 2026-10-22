@@ -4,7 +4,7 @@ param([Parameter(Mandatory=$true)][string]$GoDirectory,
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $go=Join-Path (Resolve-Path -LiteralPath $GoDirectory).Path 'go.exe'
-if ((& $go version) -notmatch 'go1\.27\.2 windows/amd64') { throw 'Use the verified Go 1.27.2 Windows amd64 toolchain' }
+if ((& $go version) -notmatch 'go1\.27\.3 windows/amd64') { throw 'Use the verified Go 1.27.3 Windows amd64 toolchain' }
 $commit='701af60772cda123492f86e383e1fdba066614a9'
 $source=Join-Path $root "toolchains\xray-main\Xray-core-$commit"
 if (!(Test-Path -LiteralPath $source)) { throw "Fetch the unmodified Xray source at $commit before building" }

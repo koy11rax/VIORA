@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"golang.org/x/sys/windows"
 	"io"
@@ -42,9 +43,23 @@ func TestServiceBrokerFullDuplexAndShutdown(t *testing.T) {
 	listener := fixturePipe(t, name)
 	stop, done := make(chan struct{}), make(chan struct{})
 	sessions := &serviceSessions{}
+	owners := &memoryOwnerStore{}
+	policyOn := true
+	mutations := 0
+	fixtureProtection := func(action string) (bool, error) {
+		if action == "disable" {
+			mutations++
+			policyOn = false
+		}
+		if action == "enable" {
+			mutations++
+			policyOn = true
+		}
+		return policyOn, nil
+	}
 	go func() {
 		defer close(done)
-		serveBroker(listener, stop, sessions, func(input io.ReadCloser, output io.Writer) {
+		serveBroker(listener, stop, sessions, func(input io.ReadCloser, output io.Writer, _ func(string) (bool, error)) {
 			defer input.Close()
 			reader := bufio.NewReader(input)
 			line, err := reader.ReadString('\n')
@@ -52,7 +67,7 @@ func TestServiceBrokerFullDuplexAndShutdown(t *testing.T) {
 				io.WriteString(output, "CONNECTED\n")
 			}
 			reader.ReadString('\n')
-		})
+		}, owners, fixtureProtection)
 	}()
 	t.Cleanup(func() { close(stop); listener.Close(); <-done; sessions.close(); sessions.wait.Wait() })
 	exchange := func(request string) string {
@@ -83,6 +98,24 @@ func TestServiceBrokerFullDuplexAndShutdown(t *testing.T) {
 	}
 	if response := exchange(`C:\untrusted-config`); response != "ERROR\n" {
 		t.Fatalf("accepted arbitrary request: %q", response)
+	}
+	// Exercise the actual pipe/token path with a fake policy backend. A failed
+	// ownership check must not reach the privileged mutation, even for an admin.
+	owners.readErr = errors.New("fixture unreadable ownership")
+	if response := exchange("PROTECTION disable"); response != "ERROR\n" || mutations != 0 || !policyOn {
+		t.Fatal("broker bypassed protection ownership")
+	}
+	owners.readErr = nil
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners.value = user.User.Sid.String()
+	if response := exchange("PROTECTION disable"); response != "OFF\n" || mutations != 1 || policyOn || owners.value != "" {
+		t.Fatal("authenticated owner's broker flow failed")
+	}
+	if response := exchange("PROTECTION recover"); response != "ERROR\n" || mutations != 1 {
+		t.Fatal("emergency operation exposed through broker")
 	}
 	privateName := fmt.Sprintf(`\\.\pipe\Viora-%032x`, time.Now().UnixNano())
 	private := fixturePipe(t, privateName)

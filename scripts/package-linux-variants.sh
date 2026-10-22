@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 022
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${VIORA_VERSION:-0.8.2}"
+version="${VIORA_VERSION:-1.0.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 deb="${1:-$root/artifacts/Viora-Linux-$version-amd64.deb}"
 for tool in dpkg-deb rpmbuild makepkg bsdtar fakeroot zstd sha256sum; do
@@ -19,13 +19,13 @@ mkdir -p "$work/payload" "$work/rpm/"{SOURCES,SPECS,BUILD,BUILDROOT,RPMS,SRPMS} 
 dpkg-deb -x "$deb" "$work/payload"
 install -m644 "$root/docs/linux-install-variants-$version.md" "$work/payload/usr/lib/viora/READ-ME-RU.txt"
 install -m644 "$root/apps/client/assets/licenses/flutter_v2ray_client-MIT.txt" "$work/payload/usr/lib/viora/licenses/"
-cat > "$work/payload/usr/lib/viora/licenses/VIORA.txt" <<'EOF'
+cat > "$work/payload/usr/lib/viora/licenses/VIORA.txt" <<EOF
 Отдельная лицензия собственного кода VIORA пока не назначена.
 Публикация исходников сама по себе не предоставляет общую лицензию.
 LicenseRef-VIORA обозначает этот статус, а не лицензию сторонних компонентов.
 Сторонние лицензии: Xray MPL-2.0, Flutter BSD-3-Clause, flutter_v2ray_client MIT.
 Полный набор уведомлений Flutter расположен в data/flutter_assets/NOTICES.Z.
-Исходники клиента и закреплённого движка: Viora-Desktop-0.8.2-source.zip.
+Исходники клиента и закреплённого движка: Viora-Desktop-$version-source.zip.
 EOF
 find "$work/payload" -type d -exec chmod 755 {} +
 find "$work/payload" -type f -exec chmod go-w {} +
@@ -46,7 +46,7 @@ sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$payload_sha/g" "$root/desktop/li
   cd "$work/arch"
   # The payload was compiled already. The build VM is Ubuntu, so dependency
   # resolution is performed by pacman on the target, never faked on this VM.
-  PKGEXT='.pkg.tar.zst' makepkg --nodeps --noconfirm
+  PKGEXT='.pkg.tar.zst' makepkg --nodeps --noconfirm --nosign
   makepkg --printsrcinfo > .SRCINFO
 )
 arch="$root/artifacts/viora-bin-$version-1-x86_64.pkg.tar.zst"

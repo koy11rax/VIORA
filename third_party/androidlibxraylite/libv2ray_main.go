@@ -37,7 +37,7 @@ type CoreController struct {
 	statsManager    corestats.Manager
 	coreMutex       sync.Mutex
 	coreInstance    *core.Instance
-	IsRunning       bool
+	isRunning       bool
 }
 
 // CoreCallbackHandler defines interface for receiving callbacks and notifications from the core service
@@ -107,18 +107,27 @@ func NewCoreController(s CoreCallbackHandler) *CoreController {
 // Thread-safe method that configures and runs the Xray core with the provided configuration
 // Returns immediately if the core is already running
 func (x *CoreController) StartLoop(configContent string, tunFd int32) (err error) {
-	// Set TUN fd key, 0 means do not use TUN
-	setEnvVariable(tunFdKey, strconv.Itoa(int(tunFd)))
-
 	x.coreMutex.Lock()
 	defer x.coreMutex.Unlock()
 
-	if x.IsRunning {
+	if x.isRunning {
 		log.Println("Core is already running")
 		return nil
 	}
+	// Change the FD only for a new session, while lifecycle operations are
+	// serialized. A duplicate start must not alter the running core's FD.
+	setEnvVariable(tunFdKey, strconv.Itoa(int(tunFd)))
 
 	return x.doStartLoop(configContent)
+}
+
+// GetIsRunning preserves gomobile's existing Java getIsRunning() API while
+// synchronizing the state read with start and stop. An exported mutable bool
+// previously generated an unlocked getter and setter in the binding.
+func (x *CoreController) GetIsRunning() bool {
+	x.coreMutex.Lock()
+	defer x.coreMutex.Unlock()
+	return x.isRunning
 }
 
 // StopLoop safely stops the core processing loop and releases resources
@@ -127,8 +136,11 @@ func (x *CoreController) StopLoop() error {
 	x.coreMutex.Lock()
 	defer x.coreMutex.Unlock()
 
-	if x.IsRunning {
+	wasRunning := x.isRunning
+	if x.coreInstance != nil {
 		x.doShutdown()
+	}
+	if wasRunning {
 		x.CallbackHandler.Shutdown()
 		x.CallbackHandler.OnEmitStatus(0, "Core stopped")
 	}
@@ -155,12 +167,14 @@ func (x *CoreController) doShutdown() {
 		}
 		x.coreInstance = nil
 	}
-	x.IsRunning = false
+	x.isRunning = false
 	x.statsManager = nil
 }
 
 // doStartLoop sets up and starts the Xray core
 func (x *CoreController) doStartLoop(configContent string) error {
+	// Clean up any partial instance before replacing its pointer on retry.
+	x.doShutdown()
 	log.Println("initializing core...")
 	config, err := coreserial.LoadJSONConfig(strings.NewReader(configContent))
 	if err != nil {
@@ -174,11 +188,12 @@ func (x *CoreController) doStartLoop(configContent string) error {
 	x.statsManager = x.coreInstance.GetFeature(corestats.ManagerType()).(corestats.Manager)
 
 	log.Println("starting core...")
-	x.IsRunning = true
-	if err := x.coreInstance.Start(); err != nil {
-		x.IsRunning = false
+	if err := startCoreInstance(x.coreInstance); err != nil {
+		x.coreInstance = nil
+		x.statsManager = nil
 		return fmt.Errorf("startup failed: %w", err)
 	}
+	x.isRunning = true
 
 	x.CallbackHandler.Startup()
 	x.CallbackHandler.OnEmitStatus(0, "Started successfully, running")

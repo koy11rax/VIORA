@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$BundlePath,
-    [string]$Version = '0.8.2',
-    [string]$OutputName = 'Viora-Windows-0.8.2'
+    [string]$Version = '1.0.0',
+    [string]$OutputName = 'Viora-Windows-1.0.0'
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$' -or $OutputName -notmatch '^[A-Za-z0-9_-]+[A-Za-z0-9_.-]*$') { throw 'Invalid version or output name' }
@@ -18,10 +18,15 @@ New-Item -ItemType Directory -Path $vioraBuild | Out-Null
 
 # Windows Installer database and cabinet builder are part of Windows itself.
 $vioraInstaller = New-Object -ComObject WindowsInstaller.Installer
+$vioraDb = $null
+$summary = $null
+try {
 $vioraDb = $vioraInstaller.OpenDatabase($vioraMsi, 3)
 function Sql([string]$Statement) {
     $view = $vioraDb.OpenView($Statement)
-    try { $view.Execute() | Out-Null } finally { $view.Close() | Out-Null }
+    try { $view.Execute() | Out-Null } finally {
+        try { $view.Close() | Out-Null } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) | Out-Null }
+    }
 }
 function Q([string]$Value) { return "'" + $Value.Replace("'", "''") + "'" }
 function Insert([string]$Table, [string[]]$Columns, [object[]]$Values) {
@@ -64,9 +69,24 @@ foreach ($pair in @(
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('TARGETDIR',$null,'SourceDir')
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ProgramFiles64Folder','TARGETDIR','.')
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('INSTALLDIR','ProgramFiles64Folder','Viora')
-Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ENGINEPARENT','ProgramFiles64Folder','Viora')
-Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ENGINEDIR','ENGINEPARENT','Engine')
-Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ENGINECORE','ENGINEDIR','core')
+# Private directory identifiers cannot be redirected through public MSI command
+# line properties. INSTALLDIR intentionally remains public for the ordinary UI.
+Insert Directory @('Directory','Directory_Parent','DefaultDir') @('EngineParent','ProgramFiles64Folder','Viora')
+Insert Directory @('Directory','Directory_Parent','DefaultDir') @('EngineDir','EngineParent','Engine')
+Insert Directory @('Directory','Directory_Parent','DefaultDir') @('EngineCore','EngineDir','core')
+# Reset private paths in both sequences as defense in depth before CostFinalize
+# resolves component destinations. These property-only actions do not execute
+# code, change ACLs or depend on the user-selected application destination.
+foreach ($reset in @(
+    @('FixEngineParent','EngineParent','[ProgramFiles64Folder]Viora\',950),
+    @('FixEngineDir','EngineDir','[ProgramFiles64Folder]Viora\Engine\',960),
+    @('FixEngineCore','EngineCore','[ProgramFiles64Folder]Viora\Engine\core\',970)
+)) {
+    Insert CustomAction @('Action','Type','Source','Target') @($reset[0],51,$reset[1],$reset[2])
+    foreach ($table in @('InstallExecuteSequence','InstallUISequence')) {
+        Insert $table @('Action','Condition','Sequence') @($reset[0],$null,[int]$reset[3])
+    }
+}
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ProgramMenuFolder','TARGETDIR','.')
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('DesktopFolder','TARGETDIR','.')
 Insert Feature @('Feature','Feature_Parent','Title','Description','Display','Level','Directory_','Attributes') @('Viora',$null,'VIORA','Viora VPN',1,1,'INSTALLDIR',0)
@@ -102,7 +122,7 @@ foreach ($file in (Get-ChildItem -LiteralPath $vioraBundle -Recurse -File | Sort
     $relativeDir = Split-Path $relative -Parent
     if (!$relativeDir) { $relativeDir = '' }
     $isEngine = $relative -in @('viora_tunnel.exe','viora_firewall.exe') -or $relativeDir -eq 'core'
-    $directory = if ($relative -in @('viora_tunnel.exe','viora_firewall.exe')) { 'ENGINEDIR' } elseif ($relativeDir -eq 'core') { 'ENGINECORE' } else { DirectoryId $relativeDir }
+    $directory = if ($relative -in @('viora_tunnel.exe','viora_firewall.exe')) { 'EngineDir' } elseif ($relativeDir -eq 'core') { 'EngineCore' } else { DirectoryId $relativeDir }
     $vioraSequence++
     $key = 'F' + $vioraSequence.ToString('D5')
     $component = 'C' + $vioraSequence.ToString('D5')
@@ -131,9 +151,14 @@ foreach ($directory in @('ProgramMenuFolder','DesktopFolder')) {
 }
 $view = $vioraDb.OpenView('INSERT INTO `Icon` (`Name`,`Data`) VALUES (?,?)')
 $record = $vioraInstaller.CreateRecord(2)
+try {
 $record.StringData(1) = 'VioraIcon'
 $record.SetStream(2,(Join-Path $vioraRoot 'apps\client\windows\runner\resources\app_icon.ico'))
-$view.Execute($record); $view.Close()
+$view.Execute($record)
+} finally {
+    [Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) | Out-Null
+    try { $view.Close() | Out-Null } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) | Out-Null }
+}
 foreach ($entry in @(
     @('FindRelatedProducts',25),@('AppSearch',50),@('LaunchConditions',100),@('ValidateProductID',700),
  @('CostInitialize',800),@('FileCost',900),@('CostFinalize',1000),@('MigrateFeatureStates',1200),
@@ -152,9 +177,14 @@ $vioraDdf | Set-Content -LiteralPath $vioraDdfPath -Encoding ascii
 if ($LASTEXITCODE -ne 0) { throw 'Cabinet build failed' }
 $view = $vioraDb.OpenView('INSERT INTO `_Streams` (`Name`,`Data`) VALUES (?,?)')
 $record = $vioraInstaller.CreateRecord(2)
+try {
 $record.StringData(1) = 'payload.cab'
 $record.SetStream(2,(Join-Path $vioraBuild 'payload.cab'))
-$view.Execute($record); $view.Close()
+$view.Execute($record)
+} finally {
+    [Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) | Out-Null
+    try { $view.Close() | Out-Null } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) | Out-Null }
+}
 $summary = $vioraDb.SummaryInformation(20)
 $summary.Property(1) = 1251
 $summary.Property(2) = 'VIORA installation'
@@ -166,7 +196,9 @@ $summary.Property(14) = 500
 $summary.Property(15) = 2
 $summary.Persist()
 $vioraDb.Commit()
-[Runtime.InteropServices.Marshal]::FinalReleaseComObject($summary) | Out-Null
-[Runtime.InteropServices.Marshal]::FinalReleaseComObject($vioraDb) | Out-Null
-[Runtime.InteropServices.Marshal]::FinalReleaseComObject($vioraInstaller) | Out-Null
+} finally {
+    if ($null -ne $summary) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($summary) | Out-Null }
+    if ($null -ne $vioraDb) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($vioraDb) | Out-Null }
+    [Runtime.InteropServices.Marshal]::FinalReleaseComObject($vioraInstaller) | Out-Null
+}
 Get-Item -LiteralPath $vioraMsi | Select-Object FullName,Length

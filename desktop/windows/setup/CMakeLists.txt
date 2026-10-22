@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(VioraSetup LANGUAGES CXX RC)
-set(VIORA_VERSION "0.8.2" CACHE STRING "Installer version")
+set(VIORA_VERSION "1.0.0" CACHE STRING "Installer version")
 if(NOT VIORA_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
   message(FATAL_ERROR "Invalid VIORA_VERSION")
 endif()

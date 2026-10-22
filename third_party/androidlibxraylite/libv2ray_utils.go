@@ -22,6 +22,8 @@ import (
 // Returns a single-line text in format: tag,direction,value;tag,direction,value;
 // Returns an empty string if the stats manager is not initialized or no counters exist.
 func (x *CoreController) QueryAllOutboundTrafficStats() string {
+	x.coreMutex.Lock()
+	defer x.coreMutex.Unlock()
 	if x.statsManager == nil {
 		return ""
 	}
@@ -59,7 +61,12 @@ func (x *CoreController) MeasureDelay(url string) (int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
-	return measureInstDelay(ctx, x.coreInstance, url)
+	// Snapshot the instance under the lifecycle lock, without holding the lock
+	// across network I/O. core.Dial safely fails if this instance is then closed.
+	x.coreMutex.Lock()
+	instance := x.coreInstance
+	x.coreMutex.Unlock()
+	return measureInstDelay(ctx, instance, url)
 }
 
 // MeasureOutboundDelay measures the outbound delay for a given configuration and URL
@@ -85,11 +92,21 @@ func MeasureOutboundDelay(ConfigureFileContent string, url string) (int64, error
 		return -1, fmt.Errorf("instance creation failed: %w", err)
 	}
 
-	if err := inst.Start(); err != nil {
+	if err := startCoreInstance(inst); err != nil {
 		return -1, fmt.Errorf("startup failed: %w", err)
 	}
 	defer inst.Close()
 	return measureInstDelay(context.Background(), inst, url)
+}
+
+// Xray documents an unknown/partially started state after Start returns an
+// error. Close that instance even though it was never reported as running.
+func startCoreInstance(instance *core.Instance) error {
+	if err := instance.Start(); err != nil {
+		_ = instance.Close()
+		return err
+	}
+	return nil
 }
 
 // measureInstDelay measures the delay for an instance to a given URL

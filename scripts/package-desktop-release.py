@@ -8,9 +8,10 @@ import hashlib
 import json
 import zipfile
 
-VERSION = '0.8.2'
+VERSION = '1.0.0'
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--platform', choices=['Windows', 'Linux', 'all'], default='all')
+parser.add_argument('--source-only', action='store_true')
 options = parser.parse_args()
 repo = Path(__file__).resolve().parent.parent
 artifacts = repo / 'artifacts'
@@ -41,9 +42,12 @@ for name, expected in pinned.items():
         raise ValueError(f'Upstream archive checksum mismatch: {name}')
 
 roots = ['apps/client/lib', 'apps/client/test', 'apps/client/assets',
-         'apps/client/windows', 'apps/client/linux', 'desktop',
-         'third_party/flutter_v2ray_client/lib']
-names = ['.gitignore', 'apps/client/pubspec.yaml', 'apps/client/pubspec.lock',
+         'apps/client/windows', 'apps/client/linux', 'apps/client/android',
+         'desktop', 'third_party/flutter_v2ray_client',
+         'third_party/androidlibxraylite', 'viora_control', 'tests', '.github',
+         'scripts']
+names = ['.gitignore', 'README.md', 'AGENTS.md', 'requirements-test.txt', 'requirements-control.txt',
+         'apps/client/pubspec.yaml', 'apps/client/pubspec.lock',
          'apps/client/analysis_options.yaml',
          'third_party/flutter_v2ray_client/pubspec.yaml',
          'third_party/flutter_v2ray_client/LICENSE',
@@ -55,12 +59,17 @@ names = ['.gitignore', 'apps/client/pubspec.yaml', 'apps/client/pubspec.lock',
          f'docs/windows-release-{VERSION}.md', f'docs/linux-release-{VERSION}.md',
          f'docs/desktop-source-build-{VERSION}.md', f'docs/desktop-user-guide-{VERSION}.md',
          f'docs/linux-install-variants-{VERSION}.md',
+         f'docs/release-{VERSION}.md', f'docs/security-release-{VERSION}.md',
+         'docs/android-source-build.md', 'docs/android-user-guide.md',
+         'docs/security-audit-2026-10-22.md', 'docs/audit-reproduction-2026-10-22.md',
          *pinned.keys()]
 files = {repo / name for name in names}
-ignored = {'.git', '.dart_tool', 'ephemeral', 'build', '__pycache__', 'vendor'}
+ignored = {'.git', '.dart_tool', 'ephemeral', 'build', '__pycache__', '.gradle', 'libs', 'jniLibs'}
 for name in roots:
     for path in (repo / name).rglob('*'):
-        if path.is_file() and not path.is_symlink() and not ignored.intersection(path.relative_to(repo).parts):
+        if (path.is_file() and not path.is_symlink()
+                and not ignored.intersection(path.relative_to(repo).parts)
+                and path.name not in {'local.properties', 'key.properties', 'signing.properties'}):
             files.add(path)
 for path in files:
     if path.is_symlink() or not path.is_file():
@@ -75,6 +84,9 @@ with zipfile.ZipFile(source, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as arch
     archive.write(repo / f'docs/desktop-source-build-{VERSION}.md', 'BUILD-SOURCE-RU.md')
 check_zip(source)
 checksum(source)
+if options.source_only:
+    print(f'{source.name}: {len(files)} source/build files, SHA-256 {sha(source)}')
+    raise SystemExit(0)
 
 for platform, binaries in {
     'Windows': [(artifacts / f'Viora-Windows-{VERSION}-Setup.exe', f'Viora-Windows-{VERSION}-Setup.exe'),

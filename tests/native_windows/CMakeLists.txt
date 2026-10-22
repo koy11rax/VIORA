@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.14)
+project(viora_native_tests LANGUAGES CXX)
+add_executable(viora_vault_test vault_test.cpp ../../apps/client/windows/runner/secure_vault.cpp)
+target_compile_features(viora_vault_test PRIVATE cxx_std_17)
+target_compile_definitions(viora_vault_test PRIVATE NOMINMAX UNICODE _UNICODE)
+target_compile_options(viora_vault_test PRIVATE /W4 /WX /EHsc)
+target_include_directories(viora_vault_test PRIVATE ../../apps/client/windows/runner)
+target_link_libraries(viora_vault_test PRIVATE crypt32 bcrypt shell32 ole32)

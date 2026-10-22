@@ -21,6 +21,10 @@ var policyMutex sync.Mutex
 // Only fixed verbs cross the privileged boundary. The per-platform functions
 // never accept user supplied shell, firewall expressions or installation paths.
 func protectionCommand(action string) string {
+	return protectionCommandWith(action, systemProtection)
+}
+
+func protectionCommandWith(action string, protection func(string) (bool, error)) string {
 	if action != "enable" && action != "disable" && action != "status" {
 		return "ERROR"
 	}
@@ -35,7 +39,7 @@ func protectionCommand(action string) string {
 		}
 		defer release()
 	}
-	on, err := systemProtection(action)
+	on, err := protection(action)
 	if err != nil {
 		return "ERROR"
 	}

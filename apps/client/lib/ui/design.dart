@@ -5,11 +5,11 @@ class VioraColors {
   final BuildContext context;
   VioraColors(this.context);
   bool get dark => Theme.of(context).brightness == Brightness.dark;
-  Color get ink => dark ? const Color(0xfff4f1fc) : const Color(0xff221c35);
-  Color get muted => dark ? const Color(0xffb4abc5) : const Color(0xff655c76);
-  Color get line => dark ? const Color(0xff3c354b) : const Color(0xffded8e9);
-  Color get panel => dark ? const Color(0xff1d1b25) : Colors.white;
-  Color get raised => dark ? const Color(0xff272431) : const Color(0xffeeebf5);
+  Color get ink => dark ? const Color(0xfff3f2f6) : const Color(0xff25242b);
+  Color get muted => dark ? const Color(0xffaaa9b3) : const Color(0xff63616e);
+  Color get line => dark ? const Color(0xff303035) : const Color(0xffdedee4);
+  Color get panel => dark ? const Color(0xff1a1a1e) : Colors.white;
+  Color get raised => dark ? const Color(0xff232327) : const Color(0xffeeeef1);
   Color get accent => Theme.of(context).colorScheme.primary;
   Color get soft => Theme.of(context).colorScheme.primaryContainer;
 }
@@ -26,10 +26,10 @@ class DesignHeading extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            fontSize: 36,
-            height: 1.08,
-            letterSpacing: -1.3,
-            fontWeight: FontWeight.w500,
+            fontSize: 28,
+            height: 1.2,
+            letterSpacing: -.8,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 12),
@@ -70,49 +70,139 @@ class DesignTag extends StatelessWidget {
   }
 }
 
-class PowerOrbit extends StatelessWidget {
+class PowerOrbit extends StatefulWidget {
   final VoidCallback? onPressed;
   final double size;
-  const PowerOrbit({super.key, this.onPressed, this.size = 182});
+  final bool active, connecting, stopping, failed, motion;
+  const PowerOrbit({
+    super.key,
+    this.onPressed,
+    this.size = 182,
+    this.active = false,
+    this.connecting = false,
+    this.stopping = false,
+    this.failed = false,
+    this.motion = true,
+  });
+  @override
+  State<PowerOrbit> createState() => _PowerOrbitState();
+}
+
+class _PowerOrbitState extends State<PowerOrbit>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _rotation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1300),
+  );
+
+  void _syncMotion() {
+    if (widget.motion &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        (widget.connecting || widget.stopping)) {
+      if (!_rotation.isAnimating) _rotation.repeat();
+    } else {
+      _rotation.stop();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotion();
+  }
+
+  @override
+  void didUpdateWidget(PowerOrbit oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncMotion();
+  }
+
+  @override
+  void dispose() {
+    _rotation.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = VioraColors(context);
-    final factor = size / 182;
-    return SizedBox(
-      width: size * 1.15,
-      height: size * 1.15,
-      child: Center(
-        child: Transform.rotate(
-          angle: -9 * math.pi / 180,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(42 * factor),
-              border: Border.all(color: c.line),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [c.soft, Theme.of(context).scaffoldBackgroundColor],
-              ),
+    final animating = widget.connecting || widget.stopping;
+    final label = widget.stopping
+        ? 'Отключаем VPN'
+        : widget.connecting
+        ? widget.onPressed == null
+              ? 'Подключаем VPN'
+              : 'Отменить подключение'
+        : widget.active
+        ? 'Отключить VPN'
+        : 'Подключить VPN';
+    final duration = !widget.motion || MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 220);
+    return RepaintBoundary(
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: AnimatedBuilder(
+          animation: _rotation,
+          builder: (context, child) => CustomPaint(
+            painter: _OrbitPainter(
+              line: c.line,
+              accent: widget.failed
+                  ? Theme.of(context).colorScheme.error
+                  : c.accent,
+              rotation: _rotation.value * 2 * math.pi,
+              animating: animating,
+              active: widget.active,
+              stopping: widget.stopping,
             ),
-            child: Center(
-              child: Transform.rotate(
-                angle: 9 * math.pi / 180,
-                child: SizedBox(
-                  width: 132 * factor,
-                  height: 132 * factor,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(32 * factor),
-                      ),
-                      elevation: 0,
-                      shadowColor: Colors.transparent,
+            child: child,
+          ),
+          child: Center(
+            child: Semantics(
+              label: label,
+              button: true,
+              enabled: widget.onPressed != null && !widget.stopping,
+              child: ExcludeSemantics(
+                child: AnimatedContainer(
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  width: widget.size * .63,
+                  height: widget.size * .63,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.active
+                        ? c.accent
+                        : animating
+                        ? c.soft
+                        : c.raised,
+                    border: Border.all(
+                      color: widget.active || animating ? c.accent : c.line,
                     ),
-                    onPressed: onPressed,
-                    child: Icon(Icons.power_settings_new, size: 38 * factor),
+                    boxShadow: widget.active
+                        ? [
+                            BoxShadow(
+                              color: c.accent.withValues(alpha: .12),
+                              blurRadius: 30,
+                            ),
+                          ]
+                        : const [],
+                  ),
+                  child: IconButton(
+                    tooltip: label,
+                    onPressed: widget.stopping ? null : widget.onPressed,
+                    style: IconButton.styleFrom(
+                      shape: const CircleBorder(),
+                      foregroundColor: widget.active
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : animating
+                          ? c.accent
+                          : c.muted,
+                    ),
+                    icon: Icon(
+                      Icons.power_settings_new,
+                      size: widget.size * .23,
+                    ),
                   ),
                 ),
               ),
@@ -122,6 +212,69 @@ class PowerOrbit extends StatelessWidget {
       ),
     );
   }
+}
+
+class _OrbitPainter extends CustomPainter {
+  final Color line, accent;
+  final double rotation;
+  final bool animating, active, stopping;
+  const _OrbitPainter({
+    required this.line,
+    required this.accent,
+    required this.rotation,
+    required this.animating,
+    required this.active,
+    required this.stopping,
+  });
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2 - 2;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = line;
+    canvas.drawCircle(center, radius, paint);
+    canvas.drawCircle(center, radius * .81, paint);
+    if (animating) {
+      paint
+        ..color = accent
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      final angle = stopping ? -rotation : rotation;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        angle,
+        math.pi * .65,
+        false,
+        paint,
+      );
+      paint
+        ..color = accent.withValues(alpha: .45)
+        ..strokeWidth = 1.5;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius * .81),
+        -angle,
+        math.pi * .8,
+        false,
+        paint,
+      );
+    }
+    canvas.drawCircle(
+      Offset(center.dx + radius * .7, center.dy - radius * .7),
+      3.5,
+      Paint()..color = active || animating ? accent : line,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_OrbitPainter old) =>
+      old.line != line ||
+      old.accent != accent ||
+      old.rotation != rotation ||
+      old.animating != animating ||
+      old.active != active ||
+      old.stopping != stopping;
 }
 
 class DesignSetting extends StatelessWidget {

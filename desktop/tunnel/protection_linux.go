@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -80,7 +79,7 @@ func systemProtection(action string) (bool, error) {
 			return false, errors.New("persistent policy mismatch")
 		}
 		if present {
-			cmd := exec.Command(nftPath(), "-j", "list", "table", "inet", "viora_lockdown")
+			cmd := exec.Command(nftPath(), "-n", "-j", "list", "table", "inet", "viora_lockdown")
 			cmd.Env = cleanEnvironment()
 			data, err := cmd.Output()
 			if err != nil {
@@ -159,39 +158,6 @@ func systemProtection(action string) (bool, error) {
 	return true, nil
 }
 
-func validPolicyState(data []byte) bool {
-	var document struct {
-		Nftables []map[string]json.RawMessage `json:"nftables"`
-	}
-	if json.Unmarshal(data, &document) != nil {
-		return false
-	}
-	chains := map[string]bool{}
-	rules := 0
-	for _, item := range document.Nftables {
-		if raw, ok := item["chain"]; ok {
-			var chain struct {
-				Name, Table, Family, Type, Hook, Policy string
-				Prio                                    int
-			}
-			if json.Unmarshal(raw, &chain) != nil || chain.Table != "viora_lockdown" || chain.Family != "inet" || chain.Type != "filter" || chain.Policy != "drop" || chain.Prio != -10 {
-				return false
-			}
-			if chain.Name != chain.Hook || (chain.Name != "output" && chain.Name != "forward") {
-				return false
-			}
-			chains[chain.Name] = true
-		}
-		if raw, ok := item["rule"]; ok {
-			var rule struct{ Chain, Table, Family string }
-			if json.Unmarshal(raw, &rule) != nil || rule.Chain != "output" || rule.Table != "viora_lockdown" || rule.Family != "inet" {
-				return false
-			}
-			rules++
-		}
-	}
-	return chains["output"] && chains["forward"] && rules == 4
-}
 func markProxy(config map[string]any) {
 	proxy := proxyMap(config)
 	stream := proxy["streamSettings"].(map[string]any)

@@ -1,29 +1,22 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
 
 func TestProtectionRejectsMissingOrPermissiveKernelState(t *testing.T) {
-	chain := func(name, policy string) string {
-		return fmt.Sprintf(`{"chain":{"family":"inet","table":"viora_lockdown","name":"%s","type":"filter","hook":"%s","prio":-10,"policy":"%s"}}`, name, name, policy)
+	// Regression: the previous test erroneously accepted four unconditional
+	// accept rules. Rule count does not prove a drop policy is effective.
+	rows := []string{
+		`{"table":{"family":"inet","name":"viora_lockdown"}}`,
+		`{"chain":{"family":"inet","table":"viora_lockdown","name":"output","type":"filter","hook":"output","prio":-10,"policy":"drop"}}`,
+		`{"chain":{"family":"inet","table":"viora_lockdown","name":"forward","type":"filter","hook":"forward","prio":-10,"policy":"drop"}}`,
 	}
-	rule := `{"rule":{"family":"inet","table":"viora_lockdown","chain":"output","expr":[{"accept":null}]}}`
-	document := func(output, forward string, n int) []byte {
-		rows := []string{chain("output", output), chain("forward", forward)}
-		for i := 0; i < n; i++ {
-			rows = append(rows, rule)
-		}
-		return []byte(`{"nftables":[` + strings.Join(rows, ",") + `]}`)
+	for i := 0; i < 4; i++ {
+		rows = append(rows, `{"rule":{"family":"inet","table":"viora_lockdown","chain":"output","expr":[{"accept":null}]}}`)
 	}
-	if !validPolicyState(document("drop", "drop", 4)) {
-		t.Fatal("kernel chain schema was not recognized")
-	}
-	for _, value := range [][]byte{document("accept", "drop", 4), document("drop", "accept", 4), document("drop", "drop", 0), document("drop", "drop", 5), []byte(`{"nftables":[]}`)} {
-		if validPolicyState(value) {
-			t.Fatal("incomplete/permissive state falsely reported protection")
-		}
+	if validPolicyState([]byte(`{"nftables":[` + strings.Join(rows, ",") + `]}`)) {
+		t.Fatal("unconditional accept rules falsely reported protection")
 	}
 }

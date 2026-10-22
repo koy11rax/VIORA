@@ -1,6 +1,6 @@
 %global debug_package %{nil}
 %global _build_id_links none
-# Preserve the signed-by-hash core byte for byte; no stripping or rewriting.
+# Preserve the integrity-pinned core byte for byte; no stripping or rewriting.
 %global __os_install_post %{nil}
 %global _binary_payload w6.gzdio
 %global __provides_exclude_from ^/usr/lib/viora/.*$
@@ -55,5 +55,5 @@ systemctl daemon-reload >/dev/null 2>&1 || :
 systemctl daemon-reload >/dev/null 2>&1 || :
 
 %changelog
-* Tue Oct 20 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
+* Thu Oct 22 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
 - Fedora RPM; preserved core hashes, desktop integration and polkit policy.

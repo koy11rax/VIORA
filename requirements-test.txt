@@ -1,0 +1,2 @@
+# Isolated local/CI HTTP test dependency; not a production bot deployment lock.
+aiohttp==3.14.5

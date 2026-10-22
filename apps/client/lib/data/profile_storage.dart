@@ -6,7 +6,18 @@ class ProfileStorage {
   static const channel = MethodChannel('dev.viora/platform');
   Map<String, List<String>> subscriptions = {};
   Future<void> _pending = Future.value();
-  Future<(List<VlessProfile>, int)> load() async {
+  String? _persistedValue;
+
+  Future<(List<VlessProfile>, int)> load() {
+    final read = _pending.then((_) => _load());
+    _pending = read.then<void>((_) {}, onError: (Object _) {});
+    return read;
+  }
+
+  Future<(List<VlessProfile>, int)> _load() async {
+    // A read may observe a vault changed outside this instance. Never reuse
+    // a remembered write after reading it, including a failed/migrated read.
+    _persistedValue = null;
     final raw = await channel.invokeMethod<String>('readProfiles');
     if (raw == null) return (<VlessProfile>[], -1);
     if (raw.length > 1048576) throw const FormatException('Profiles too large');
@@ -59,9 +70,13 @@ class ProfileStorage {
         value.length > 1048576) {
       throw const FormatException('Слишком много серверов');
     }
-    final write = _pending.then(
-      (_) => channel.invokeMethod<void>('saveProfiles', {'value': value}),
-    );
+    final write = _pending.then((_) async {
+      // Compare at execution time: queued A -> B -> A must persist the final
+      // A. Remember only acknowledged writes so an error remains retryable.
+      if (_persistedValue == value) return;
+      await channel.invokeMethod<void>('saveProfiles', {'value': value});
+      _persistedValue = value;
+    });
     _pending = write.catchError((Object _) {});
     return write;
   }
