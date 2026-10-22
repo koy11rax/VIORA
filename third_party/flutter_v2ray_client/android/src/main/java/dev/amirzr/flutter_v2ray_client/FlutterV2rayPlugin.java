@@ -15,6 +15,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import dev.amirzr.flutter_v2ray_client.v2ray.V2rayController;
 import dev.amirzr.flutter_v2ray_client.v2ray.V2rayReceiver;
@@ -74,11 +75,8 @@ public class FlutterV2rayPlugin implements FlutterPlugin, ActivityAware, PluginR
                 Context contextToUse = activity != null ? activity : appContext;
 
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        contextToUse.registerReceiver(v2rayBroadCastReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-                    } else {
-                        contextToUse.registerReceiver(v2rayBroadCastReceiver, filter);
-                    }
+                    ContextCompat.registerReceiver(contextToUse, v2rayBroadCastReceiver, filter,
+                            ContextCompat.RECEIVER_NOT_EXPORTED);
                 } catch (Exception e) {
                     Log.e("FlutterV2rayPlugin", "Failed to register broadcast receiver", e);
                 }
@@ -242,11 +240,8 @@ public class FlutterV2rayPlugin implements FlutterPlugin, ActivityAware, PluginR
             String packageName = appContext.getPackageName();
             IntentFilter filter = new IntentFilter(packageName + ".V2RAY_CONNECTION_INFO");
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    activity.registerReceiver(v2rayBroadCastReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-                } else {
-                    activity.registerReceiver(v2rayBroadCastReceiver, filter);
-                }
+                ContextCompat.registerReceiver(activity, v2rayBroadCastReceiver, filter,
+                        ContextCompat.RECEIVER_NOT_EXPORTED);
             } catch (Exception e) {
                 Log.e("FlutterV2rayPlugin", "Failed to register broadcast receiver in onAttachedToActivity", e);
             }
@@ -274,11 +269,8 @@ public class FlutterV2rayPlugin implements FlutterPlugin, ActivityAware, PluginR
             String packageName = appContext.getPackageName();
             IntentFilter filter = new IntentFilter(packageName + ".V2RAY_CONNECTION_INFO");
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    activity.registerReceiver(v2rayBroadCastReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-                } else {
-                    activity.registerReceiver(v2rayBroadCastReceiver, filter);
-                }
+                ContextCompat.registerReceiver(activity, v2rayBroadCastReceiver, filter,
+                        ContextCompat.RECEIVER_NOT_EXPORTED);
             } catch (Exception e) {
                 Log.e("FlutterV2rayPlugin", "Failed to register broadcast receiver in onReattachedToActivityForConfigChanges", e);
             }

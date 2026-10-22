@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../../ui/design.dart';
 import '../../platform/desktop_protection.dart';
+import '../../platform/quick_settings.dart';
 import '../../platform/tunnel.dart';
 import 'client_page.dart' show ClientState;
 
@@ -13,6 +14,7 @@ class SettingsDetail extends StatelessWidget {
   final VoidCallback onChanged;
   final ValueChanged<int> onNavigate;
   final ValueChanged<String> onNotice;
+  final bool? quickSettingsSupported;
   const SettingsDetail({
     super.key,
     required this.index,
@@ -20,6 +22,7 @@ class SettingsDetail extends StatelessWidget {
     required this.onChanged,
     required this.onNavigate,
     required this.onNotice,
+    this.quickSettingsSupported,
   });
   Future<void> _protection(BuildContext context, String action) async {
     if (state.protectionBusy) return;
@@ -321,6 +324,10 @@ class SettingsDetail extends StatelessWidget {
                   DesignTag('Обязательно'),
                 ),
               ] else if (index == 12) ...[
+                if (quickSettingsSupported ?? Platform.isAndroid) ...[
+                  _QuickSettingsCard(onNotice: onNotice),
+                  const SizedBox(height: 20),
+                ],
                 toggle(
                   'autoconnect',
                   'Подключаться при открытии',
@@ -349,7 +356,7 @@ class SettingsDetail extends StatelessWidget {
                   onPressed: () => showLicensePage(
                     context: context,
                     applicationName: 'Viora',
-                    applicationVersion: '1.0.0',
+                    applicationVersion: '1.0.1',
                   ),
                   icon: const Icon(Icons.info_outline),
                   label: const Text('Лицензии компонентов'),
@@ -409,4 +416,106 @@ class SettingsDetail extends StatelessWidget {
       ],
     );
   }
+}
+
+class _QuickSettingsCard extends StatefulWidget {
+  final ValueChanged<String> onNotice;
+  const _QuickSettingsCard({required this.onNotice});
+
+  @override
+  State<_QuickSettingsCard> createState() => _QuickSettingsCardState();
+}
+
+class _QuickSettingsCardState extends State<_QuickSettingsCard> {
+  bool _pending = false;
+  String? _status;
+
+  Future<void> _addTile() async {
+    if (_pending) return;
+    setState(() => _pending = true);
+    String message;
+    try {
+      final result = await QuickSettings.requestAddTile();
+      message = switch (result) {
+        'added' => 'Плитка VIORA добавлена в быстрые настройки',
+        'already_added' => 'Плитка VIORA уже есть в быстрых настройках',
+        'not_added' => 'Добавление отменено. Плитку можно добавить вручную',
+        'manual' =>
+          'На этой версии Android добавь плитку вручную по инструкции ниже',
+        _ =>
+          'Системное добавление недоступно. Добавь плитку вручную по инструкции ниже',
+      };
+    } on PlatformException catch (error) {
+      message = switch (error.code) {
+        'busy' => 'Запрос уже открыт. Заверши его в системном окне',
+        'not_foreground' => 'Открой VIORA на экране и попробуй ещё раз',
+        _ =>
+          'Не удалось открыть системное окно. Добавь плитку вручную по инструкции ниже',
+      };
+    } catch (_) {
+      message =
+          'Не удалось открыть системное окно. Добавь плитку вручную по инструкции ниже';
+    }
+    if (!mounted) return;
+    setState(() {
+      _pending = false;
+      _status = message;
+    });
+    widget.onNotice(message);
+  }
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: VioraColors(context).raised,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.dashboard_customize_outlined, size: 22),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Быстрые настройки',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Подключай и отключай VPN из шторки рядом с Wi-Fi и яркостью. Для подключения нужен сохранённый сервер.',
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            key: const Key('quick-settings-add-tile'),
+            onPressed: _pending ? null : _addTile,
+            icon: _pending
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add),
+            label: Text(
+              _pending ? 'Ожидаем Android…' : 'Добавить плитку VIORA',
+            ),
+          ),
+          if (_status != null) ...[
+            const SizedBox(height: 12),
+            Semantics(liveRegion: true, child: Text(_status!)),
+          ],
+          const SizedBox(height: 14),
+          Text(
+            'Вручную: раскрой шторку быстрых настроек полностью → нажми карандаш или «Изменить» → найди VIORA среди доступных плиток и перетащи её наверх. Названия пунктов могут отличаться на твоём телефоне.',
+            style: TextStyle(color: VioraColors(context).muted, height: 1.4),
+          ),
+        ],
+      ),
+    ),
+  );
 }

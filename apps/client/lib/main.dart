@@ -1,4 +1,5 @@
 import 'platform/desktop_tray.dart';
+import 'platform/quick_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'domain/control.dart';
@@ -353,9 +354,80 @@ class VioraShell extends StatefulWidget {
   State<VioraShell> createState() => _VioraShellState();
 }
 
-class _VioraShellState extends State<VioraShell> {
+class _VioraShellState extends State<VioraShell> with WidgetsBindingObserver {
   final clientKey = GlobalKey<ClientPageState>();
   final tray = DesktopTray();
+  bool get hasQuickTile => !kIsWeb && Platform.isAndroid;
+  bool _readingTile = false, _connectingTile = false;
+  Stopwatch? _tileConnect;
+
+  Future<void> _takeTileAction() async {
+    if (!hasQuickTile || !mounted || _readingTile) return;
+    _readingTile = true;
+    try {
+      if (await QuickSettings.takeAction() == 'connect' && mounted) {
+        // Suppress competing auto-connect before waiting for the profile vault.
+        widget.clientState.startupHandled = true;
+        _tileConnect = Stopwatch()..start();
+      }
+    } finally {
+      _readingTile = false;
+    }
+    await _connectFromTile();
+  }
+
+  Future<void> _connectFromTile() async {
+    if (!mounted ||
+        _tileConnect == null ||
+        _connectingTile ||
+        !widget.clientState.profilesLoaded) {
+      return;
+    }
+    final pending = _tileConnect!;
+    _tileConnect = null;
+    if (pending.elapsed > const Duration(seconds: 30)) return;
+    _connectingTile = true;
+    try {
+      final tunnel = widget.clientState.tunnel;
+      final confirmed = await tunnel.synchronizeNativeStatus();
+      if (!mounted) return;
+      if (!confirmed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Не удалось проверить состояние VPN. Повтори подключение.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      if (tunnel.running || tunnel.busy) return;
+      if (clientKey.currentState == null) {
+        setState(() => index = 0);
+        await WidgetsBinding.instance.endOfFrame;
+      }
+      if (mounted) await clientKey.currentState?.connectTunnel();
+    } finally {
+      _connectingTile = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_takeTileAction());
+  }
+
+  @override
+  void didUpdateWidget(covariant VioraShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (hasQuickTile && _tileConnect != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_connectFromTile());
+      });
+    }
+  }
+
   bool get hasTray =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.windows ||
@@ -426,6 +498,13 @@ class _VioraShellState extends State<VioraShell> {
   void initState() {
     super.initState();
     if (hasTray) DesktopTray.channel.setMethodCallHandler(_trayCall);
+    if (hasQuickTile) {
+      WidgetsBinding.instance.addObserver(this);
+      QuickSettings.channel.setMethodCallHandler((call) async {
+        if (call.method == 'actionAvailable') await _takeTileAction();
+      });
+      unawaited(_takeTileAction());
+    }
     repository = widget.repository;
     widget.clientState.account.addListener(_accountChanged);
     _authorize();
@@ -444,6 +523,10 @@ class _VioraShellState extends State<VioraShell> {
   @override
   void dispose() {
     if (hasTray) DesktopTray.channel.setMethodCallHandler(null);
+    if (hasQuickTile) {
+      WidgetsBinding.instance.removeObserver(this);
+      QuickSettings.channel.setMethodCallHandler(null);
+    }
     widget.clientState.account.removeListener(_accountChanged);
     super.dispose();
   }

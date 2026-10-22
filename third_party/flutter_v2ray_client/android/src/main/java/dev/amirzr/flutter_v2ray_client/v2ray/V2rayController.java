@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import androidx.core.content.ContextCompat;
 
 import dev.amirzr.flutter_v2ray_client.v2ray.core.V2rayCoreManager;
 import dev.amirzr.flutter_v2ray_client.v2ray.services.V2rayProxyOnlyService;
@@ -28,17 +29,21 @@ public class V2rayController {
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context arg0, Intent arg1) {
-                AppConfigs.V2RAY_STATE = (AppConfigs.V2RAY_STATES) arg1.getExtras().getSerializable("STATE");
+                if (arg1 == null) return;
+                try {
+                    Object state = arg1.getSerializableExtra("STATE");
+                    if (state instanceof AppConfigs.V2RAY_STATES) {
+                        AppConfigs.V2RAY_STATE = (AppConfigs.V2RAY_STATES) state;
+                    }
+                } catch (RuntimeException ignored) {
+                    // Malformed status must not crash the UI or alter its state.
+                }
             }
         };
-        // Use package-specific intent filter to isolate broadcasts per app
+        // The private receiver also authenticates same-app senders on API < 33.
         String packageName = context.getPackageName();
         IntentFilter filter = new IntentFilter(packageName + ".V2RAY_CONNECTION_INFO");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, filter);
-        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     public static void changeConnectionMode(final AppConfigs.V2RAY_CONNECTION_MODES connection_mode) {
@@ -125,11 +130,7 @@ public class V2rayController {
         // Use package-specific intent filter to isolate broadcasts per app
         String packageName = context.getPackageName();
         IntentFilter delayIntentFilter = new IntentFilter(packageName + ".CONNECTED_V2RAY_SERVER_DELAY");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.registerReceiver(receiver, delayIntentFilter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, delayIntentFilter);
-        }
+        ContextCompat.registerReceiver(context, receiver, delayIntentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         try {
             boolean received = latch.await(3000, TimeUnit.MILLISECONDS);

@@ -422,14 +422,20 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   Future<void> toggleTunnel() async {
-    final state = widget.state, tunnel = widget.state.tunnel;
+    final tunnel = widget.state.tunnel;
     if (tunnel.busy) return;
-    if (tunnel.running || tunnel.phase == TunnelPhase.failed) {
-      if (tunnel.running) {
-        await tunnel.disconnect();
-        return;
-      }
+    if (tunnel.running) {
+      await tunnel.disconnect();
+      return;
     }
+    await connectTunnel();
+  }
+
+  /// Quick Settings requests a desired state, not an ambiguous toggle. This
+  /// remains safe when a native event or auto-connect wins the startup race.
+  Future<void> connectTunnel() async {
+    final state = widget.state, tunnel = widget.state.tunnel;
+    if (tunnel.busy || tunnel.running) return;
     if (!tunnel.engine.supported) {
       notice('VPN недоступен на этой платформе.');
       return;

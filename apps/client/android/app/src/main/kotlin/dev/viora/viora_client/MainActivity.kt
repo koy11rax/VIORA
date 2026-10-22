@@ -10,9 +10,14 @@ import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val worker = Executors.newSingleThreadExecutor()
+    private var quickSettings: QuickSettingsBridge? = null
+    var quickSettingsResumed = false
+        private set
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        quickSettings = QuickSettingsBridge(this,
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.viora/quick_settings"))
         val vault = SecureVault(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.viora/platform")
             .setMethodCallHandler { call, result ->
@@ -83,7 +88,25 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    override fun onResume() {
+        super.onResume()
+        quickSettingsResumed = true
+        quickSettings?.resumed()
+    }
+
+    override fun onPause() {
+        quickSettingsResumed = false
+        super.onPause()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        quickSettings?.resumed()
+    }
+
     override fun onDestroy() {
+        quickSettings?.close()
+        quickSettings = null
         worker.shutdown()
         super.onDestroy()
     }

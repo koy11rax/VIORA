@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'quick_settings.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -335,7 +336,12 @@ abstract interface class TunnelEngine {
   Future<void> stop();
 }
 
-class AndroidXrayEngine implements TunnelEngine {
+/// Engines that can query an authoritative, cross-process status on demand.
+abstract interface class TunnelStatusReader {
+  Future<TunnelStats?> readStatus();
+}
+
+class AndroidXrayEngine implements TunnelEngine, TunnelStatusReader {
   static const channel = MethodChannel('flutter_v2ray_client');
   static const statusChannel = EventChannel('flutter_v2ray_client/status');
   @override
@@ -365,6 +371,14 @@ class AndroidXrayEngine implements TunnelEngine {
     'notificationIconResourceType': 'drawable',
     'notificationIconResourceName': 'ic_vpn_notification',
   });
+  @override
+  Future<TunnelStats?> readStatus() async {
+    final state = await QuickSettings.readStatus();
+    if (state == null) return null;
+    // A stopped/failed daemon has no running tunnel to stop before retrying.
+    return TunnelStats(state == 'FAILED' ? 'DISCONNECTED' : state);
+  }
+
   @override
   Future<bool> requestPermission() async =>
       await channel.invokeMethod<bool>('requestPermission') ?? false;
@@ -424,6 +438,37 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> initialize() => _initializing ??= _initialize();
+
+  /// Cold UI startup does not imply that the separate Android VPN process is
+  /// stopped. Query it before honoring a tile's explicit connect request.
+  Future<bool> synchronizeNativeStatus() async {
+    await initialize();
+    if (!_ready || _disposed) return false;
+    if (running || busy) return true;
+    final source = engine is TunnelStatusReader
+        ? engine as TunnelStatusReader
+        : null;
+    if (source == null) return false;
+    try {
+      final value = await source.readStatus();
+      if (_disposed ||
+          value == null ||
+          !const {
+            'CONNECTED',
+            'CONNECTING',
+            'DISCONNECTED',
+            'FAILED',
+          }.contains(value.state)) {
+        return false;
+      }
+      // An ordinary UI operation may have started while IPC was in flight.
+      if (!running && !busy) _receive(value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _initialize() async {
     if (!engine.supported) {
       _change(TunnelPhase.unavailable);

@@ -3,14 +3,17 @@
 VPN-клиент для Android, Windows и Linux. Графитовый интерфейс, фиолетовые акценты,
 подписки своего сервиса и импорт других совместимых серверов.
 
-## Скачать 1.0.0
+## Скачать
 
-- [Android APK](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Android-1.0.0-release.apk)
+- [Android APK 1.0.1](https://github.com/koy11rax/VIORA/releases/download/v1.0.1/Viora-Android-1.0.1-release.apk)
 - [Windows: установщик EXE](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Windows-1.0.0-Setup.exe)
 - [Debian / Ubuntu: DEB](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-amd64.deb)
 - [Fedora: RPM](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-1.x86_64.rpm)
 - [Arch: пакет pacman](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/viora-bin-1.0.0-1-x86_64.pkg.tar.zst)
 - [Все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
+
+Android 1.0.1 добавляет настоящую плитку VIORA VPN в быстрые настройки:
+[изменения и инструкция](docs/android-release-1.0.1.md). Windows/Linux — версия 1.0.0.
 
 Закрой предыдущую версию перед обновлением Windows. Установщик сохраняет
 настройки и позволяет выбрать папку интерфейса; служба VPN устанавливается
