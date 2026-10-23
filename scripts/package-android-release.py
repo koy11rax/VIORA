@@ -53,17 +53,24 @@ names = [
     f'docs/android-release-notes-{version}.md',
 ]
 files = {repo / name for name in names}
+excluded_parts = {'.git', '.gradle', '.dart_tool', '__pycache__', 'jniLibs'}
 for name in roots:
     root = repo / name
     if not root.is_dir():
         raise FileNotFoundError(name)
-    files.update(p for p in root.rglob('*') if p.is_file())
+    # Legacy JNI outputs can remain in an ignored developer checkout. They are
+    # not corresponding source and must never enter the public source archive.
+    files.update(
+        p for p in root.rglob('*')
+        if p.is_file() and not excluded_parts.intersection(p.relative_to(repo).parts)
+    )
 
 source = artifacts / f'Viora-Android-{version}-source.zip'
 for path in files:
     relative = path.relative_to(repo)
     if path.is_symlink() or path.suffix.lower() in {
         '.jks', '.keystore', '.pfx', '.p12', '.db', '.sqlite', '.aar', '.apk',
+        '.so', '.dll', '.exe',
     } or path.name in {'local.properties', 'key.properties', 'signing.properties', '.env'}:
         raise ValueError(f'Forbidden source file: {relative}')
     if not path.is_file():
