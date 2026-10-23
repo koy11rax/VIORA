@@ -1,9 +1,10 @@
-# Сборка Android 1.0.0
+# Сборка Android 1.0.2
 
-Архив Viora-Desktop-1.0.0-source.zip содержит также актуальные Android-исходники:
+Архив Viora-Android-1.0.2-source.zip содержит соответствующие Android-исходники:
 Flutter-клиент, тесты, Android runner, Java-интеграцию, AndroidLibXrayLite и vendor.
 В нём нет пользовательских профилей, ключей подписи, баз и готового AAR.
-Общий Python-адаптер не содержит рабочего бота или доступа к серверу.
+Серверный адаптер и рабочий бот для сборки Android не требуются и в этот архив
+не включены. Полный репозиторий доступен по тегу v1.0.2.
 
 Требуются Flutter 3.35.5 / Dart 3.9.2, JDK 21, Android SDK 36,
 NDK 27.0.12077973 и Go 1.27.3. Версии gomobile/gobind закреплены в
@@ -23,7 +24,7 @@ flutter test --no-pub. Для тестового APK — flutter build apk --deb
 Пути SDK/Flutter в android/local.properties локальные и не публикуются.
 
 Подписанный выпуск создаёт scripts/build-android-release.ps1 с внешним
-SigningDirectory, JavaHome, AndroidSdk, VersionName 1.0.0 и VersionCode 28.
+SigningDirectory, JavaHome, AndroidSdk, VersionName 1.0.2 и VersionCode 32.
 InitializeKey применяй только для новой независимой подписи. Не заменяй
 существующий ключ: другая подпись не сможет обновить официальную установку.
 Секреты подписи должны оставаться вне репозитория. APK поставляется отдельно.

@@ -5,15 +5,18 @@ VPN-клиент для Android, Windows и Linux. Графитовый инте
 
 ## Скачать
 
-- [Android APK 1.0.1](https://github.com/koy11rax/VIORA/releases/download/v1.0.1/Viora-Android-1.0.1-release.apk)
+- [Android APK 1.0.2](https://github.com/koy11rax/VIORA/releases/download/v1.0.2/Viora-Android-1.0.2-release.apk)
 - [Windows: установщик EXE](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Windows-1.0.0-Setup.exe)
 - [Debian / Ubuntu: DEB](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-amd64.deb)
 - [Fedora: RPM](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-1.x86_64.rpm)
 - [Arch: пакет pacman](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/viora-bin-1.0.0-1-x86_64.pkg.tar.zst)
-- [Все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
+- [Android: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.2)
+- [Windows/Linux: все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
 
-Android 1.0.1 добавляет настоящую плитку VIORA VPN в быстрые настройки:
-[изменения и инструкция](docs/android-release-1.0.1.md). Windows/Linux — версия 1.0.0.
+Android 1.0.2 исправляет восстановление соединения, применение обновлённой
+подписки и сохранение выбранного способа подключения. Проверка пинга отдельно
+показывает ответ HTTPS через активный VPN: [изменения и проверки](docs/android-release-1.0.2.md).
+Плитка быстрых настроек сохранена. Windows/Linux — версия 1.0.0.
 
 Закрой предыдущую версию перед обновлением Windows. Установщик сохраняет
 настройки и позволяет выбрать папку интерфейса; служба VPN устанавливается
@@ -52,8 +55,9 @@ Windows EXE/MSI и Linux-пакеты пока без подписи издат�
 Linux-пакеты Fedora/Arch используют общий бинарник, собранный на Ubuntu;
 отдельная проверка запуска на Fedora/Arch пока не выполнена.
 
-Результаты проверки именно этого выпуска и непроверенные сценарии:
-[примечания 1.0.0](docs/release-1.0.0.md).
+Результаты проверки и непроверенные сценарии:
+[Android 1.0.2](docs/android-release-1.0.2.md),
+[Windows/Linux 1.0.0](docs/release-1.0.0.md).
 Предыдущий подробный аудит: [отчёт](docs/security-audit-2026-10-22.md).
 Успешные проверки не являются доказательством отсутствия всех уязвимостей или утечек.
 

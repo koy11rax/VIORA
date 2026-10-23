@@ -7,8 +7,12 @@ License: LGPL-3.0 (LICENSE retained).
 
 The baseline .go files, go.mod and go.sum were copied from that commit, with
 the additional viora_protector.go bridge. It registers Android socket
-protection using the core's system dialer controller. Its failures reject the
-dial. It does not add DNS, TLS, routing or implicit bypass configuration.
+protection using the core's system dialer controller. The bridge returns a
+protection error, but the vendored upstream dialer logs controller errors and
+continues dialing; rejection of the dial is not guaranteed. VIORA normally
+excludes its own UID from the VPN, but protect-failure handling remains a known
+limitation requiring a native-core change and dedicated runtime verification.
+It does not add DNS, TLS, routing or implicit bypass configuration.
 
 Core: github.com/xtls/xray-core
 v1.260327.1-0.20261010092107-701af60772cd (go.mod/go.sum).
