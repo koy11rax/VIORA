@@ -52,6 +52,8 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
     private android.net.ConnectivityManager connectivity;
     private android.net.ConnectivityManager.NetworkCallback networkCallback;
     private android.net.Network underlying;
+    private final java.util.Map<android.net.Network, android.net.NetworkCapabilities> physicalNetworks = new java.util.LinkedHashMap<>();
+    private final java.util.Map<android.net.Network, android.net.LinkProperties> networkLinks = new java.util.HashMap<>();
     private final Runnable recovery = this::recover;
 
     @Override
@@ -69,9 +71,12 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             return START_NOT_STICKY;
         }
         if (command == AppConfigs.V2RAY_SERVICE_COMMANDS.MEASURE_DELAY) {
+            final String delayUrl = intent.getStringExtra("DELAY_URL");
+            final String requestId = intent.getStringExtra("REQUEST_ID");
             new Thread(() -> {
                 Intent result = new Intent(getPackageName() + ".CONNECTED_V2RAY_SERVER_DELAY").setPackage(getPackageName());
-                result.putExtra("DELAY", String.valueOf(V2rayCoreManager.getInstance().getConnectedV2rayServerDelay()));
+                result.putExtra("REQUEST_ID", requestId);
+                result.putExtra("DELAY", String.valueOf(V2rayCoreManager.getInstance().getConnectedV2rayServerDelay(delayUrl)));
                 sendBroadcast(result);
             }, "VIORA_DELAY").start();
             return desired ? START_STICKY : START_NOT_STICKY;
@@ -104,6 +109,11 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             }
             desired = true;
             failures = 0;
+            // A fresh background/always-on attempt must be visible to an existing
+            // Flutter observer, including one which retained an earlier failure.
+            boolean externalStart = command != AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE
+                    || intent.getBooleanExtra("FROM_QUICK_TILE", false);
+            broadcast(AppConfigs.V2RAY_STATES.V2RAY_CONNECTING, null, externalStart);
             sessionStore.save(v2rayConfig);
             watchNetworks();
             if (!startTunnel()) scheduleRecovery();
@@ -131,7 +141,10 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
                 fail("lockdown_required");
                 return false;
             }
-            if (underlying != null) setUnderlyingNetworks(new android.net.Network[]{underlying});
+            // protect(fd) follows Android's default network. No upstream socket
+            // is Network.bindSocket-bound, so advertising a chosen Wi-Fi here
+            // would misrepresent the transport actually carrying the tunnel.
+            setUnderlyingNetworks(null);
             v2rayConfig.V2RAY_FULL_JSON_CONFIG = Utilities.ensureTunInbound(v2rayConfig.V2RAY_FULL_JSON_CONFIG, v2rayConfig.MTU);
             boolean success = manager.startCore(v2rayConfig, mInterface.getFd());
             if (success) { failures = 0; broadcast(AppConfigs.V2RAY_STATES.V2RAY_CONNECTED, null); }
@@ -159,9 +172,14 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
     }
 
     private void broadcast(AppConfigs.V2RAY_STATES state, String error) {
+        broadcast(state, error, false);
+    }
+
+    private void broadcast(AppConfigs.V2RAY_STATES state, String error, boolean externalStart) {
         V2rayCoreManager.getInstance().V2RAY_STATE = state;
         Intent status = new Intent(getPackageName() + ".V2RAY_CONNECTION_INFO").setPackage(getPackageName());
         status.putExtra("STATE", state).putExtra("ERROR_CODE", error).putExtra("DURATION", "00:00:00");
+        if (externalStart) status.putExtra("EXTERNAL_START", true);
         if (Build.VERSION.SDK_INT >= 29) status.putExtra("ALWAYS_ON", isAlwaysOn()).putExtra("LOCKDOWN", isLockdownEnabled());
         sendBroadcast(status);
     }
@@ -177,24 +195,41 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
     }
 
     private android.net.Network findNetwork() {
-        android.net.Network best = null;
-        for (android.net.Network network : connectivity.getAllNetworks()) {
-            android.net.NetworkCapabilities caps = connectivity.getNetworkCapabilities(network);
-            if (caps == null || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN) ||
-                    !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
-            if (best == null || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) best = network;
+        java.util.Map<android.net.Network, Boolean> candidates = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<android.net.Network, android.net.NetworkCapabilities> entry : physicalNetworks.entrySet()) {
+            candidates.put(entry.getKey(), entry.getValue().hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED));
         }
-        return best;
+        return selectPhysicalNetwork(candidates, underlying);
     }
 
-    private void networkChanged() {
+    /** Reconnect signal selection only; sockets continue to use Android's default. */
+    static <T> T selectPhysicalNetwork(java.util.Map<T, Boolean> candidates, T current) {
+        T validated = null;
+        for (java.util.Map.Entry<T, Boolean> entry : candidates.entrySet()) {
+            if (Boolean.TRUE.equals(entry.getValue())) {
+                if (java.util.Objects.equals(entry.getKey(), current)) return current;
+                if (validated == null) validated = entry.getKey();
+            }
+        }
+        if (validated != null) return validated;
+        if (candidates.containsKey(current)) return current;
+        return candidates.isEmpty() ? null : candidates.keySet().iterator().next();
+    }
+
+    private static boolean isPhysical(android.net.NetworkCapabilities capabilities) {
+        return capabilities != null
+                && capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                && capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    private void networkChanged(boolean forceReconnect) {
         if (!desired || destroyed) return;
         android.net.Network next = findNetwork();
-        if (java.util.Objects.equals(next, underlying)) return;
+        if (java.util.Objects.equals(next, underlying) && !forceReconnect) return;
         underlying = next;
-        setUnderlyingNetworks(next == null ? null : new android.net.Network[]{next});
         if (next == null) return;
         if (v2rayConfig.RECONNECT && !recovering) {
+            broadcast(AppConfigs.V2RAY_STATES.V2RAY_CONNECTING, null);
             handler.removeCallbacks(recovery);
             recoveryScheduled = true;
             handler.postDelayed(recovery, 1000);
@@ -204,14 +239,40 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
     private void watchNetworks() {
         if (networkCallback != null) return;
         connectivity = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        underlying = findNetwork();
         networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
-            @Override public void onAvailable(android.net.Network network) { networkChanged(); }
-            @Override public void onLost(android.net.Network network) { networkChanged(); }
+            @Override public void onCapabilitiesChanged(android.net.Network network, android.net.NetworkCapabilities capabilities) {
+                android.net.NetworkCapabilities previous = physicalNetworks.get(network);
+                boolean validationChanged = previous != null
+                        && previous.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                        != capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                if (isPhysical(capabilities)) physicalNetworks.put(network, new android.net.NetworkCapabilities(capabilities));
+                else { physicalNetworks.remove(network); networkLinks.remove(network); }
+                networkChanged(validationChanged && java.util.Objects.equals(network, underlying));
+            }
+            @Override public void onLinkPropertiesChanged(android.net.Network network, android.net.LinkProperties properties) {
+                if (!physicalNetworks.containsKey(network)) return;
+                // Framework callbacks already deliver a parcelled snapshot;
+                // the copy constructor is hidden from the public Android SDK.
+                android.net.LinkProperties previous = networkLinks.put(network, properties);
+                networkChanged(previous != null && !previous.equals(properties) && java.util.Objects.equals(network, underlying));
+            }
+            @Override public void onLost(android.net.Network network) {
+                physicalNetworks.remove(network);
+                networkLinks.remove(network);
+                networkChanged(false);
+            }
         };
         connectivity.registerNetworkCallback(new android.net.NetworkRequest.Builder()
                 .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), networkCallback, handler);
+        // Register first so loss between enumeration and registration cannot
+        // leave an initial network cached forever. Callbacks run on this handler.
+        // Synchronous getters are used only for this initial outside-callback scan.
+        for (android.net.Network network : connectivity.getAllNetworks()) {
+            android.net.NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);
+            if (isPhysical(capabilities)) physicalNetworks.put(network, new android.net.NetworkCapabilities(capabilities));
+        }
+        underlying = findNetwork();
     }
 
     private boolean establishVpnInterface() {
@@ -382,6 +443,8 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             try { connectivity.unregisterNetworkCallback(networkCallback); } catch (Exception ignored) { }
             networkCallback = null;
         }
+        physicalNetworks.clear();
+        networkLinks.clear();
         isRunning = false;
         vpnInterfaceReady = false;
 

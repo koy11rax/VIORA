@@ -77,6 +77,8 @@ class _VioraAppState extends State<VioraApp> {
   bool _profilesLoaded = false;
   bool _tunnelWasActive = false;
   String? warning;
+  String? _quickTileWarning;
+  int _tilePreparation = 0;
   @override
   void initState() {
     super.initState();
@@ -113,17 +115,24 @@ class _VioraAppState extends State<VioraApp> {
 
   void _prepareQuickTile() {
     if (!Platform.isAndroid || !_profilesLoaded) return;
+    final attempt = ++_tilePreparation;
     unawaited(
-      QuickSettings.prepareProfile(clientState.quickTileProfile()).catchError((
-        Object _,
-      ) {
-        if (mounted) {
-          setState(
-            () => warning =
-                'Не удалось обновить профиль плитки. Подключай VPN в VIORA и повтори сохранение настроек.',
-          );
-        }
-      }),
+      QuickSettings.prepareProfile(clientState.quickTileProfile())
+          .then((_) {
+            if (mounted &&
+                attempt == _tilePreparation &&
+                _quickTileWarning != null) {
+              setState(() => _quickTileWarning = null);
+            }
+          })
+          .catchError((Object _) {
+            if (mounted && attempt == _tilePreparation) {
+              setState(
+                () => _quickTileWarning =
+                    'Не удалось обновить профиль плитки. Подключай VPN в VIORA и повтори сохранение настроек.',
+              );
+            }
+          }),
     );
   }
 
@@ -219,7 +228,7 @@ class _VioraAppState extends State<VioraApp> {
       repository: widget.repository,
       mode: mode,
       clientState: clientState,
-      warning: warning,
+      warning: warning ?? _quickTileWarning,
       onTheme: (v) {
         setState(() => mode = v);
         save();

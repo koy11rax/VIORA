@@ -60,12 +60,15 @@ public class V2rayProxyOnlyService extends Service implements V2rayServicesListe
             V2rayCoreManager.getInstance().stopCore();
             AppConfigs.V2RAY_CONFIG = null;
         } else if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.MEASURE_DELAY)) {
+            final String delayUrl = intent.getStringExtra("DELAY_URL");
+            final String requestId = intent.getStringExtra("REQUEST_ID");
             new Thread(() -> {
                 try {
                     String packageName = getPackageName();
                     Intent sendB = new Intent(packageName + ".CONNECTED_V2RAY_SERVER_DELAY");
                     sendB.setPackage(packageName);
-                    sendB.putExtra("DELAY", String.valueOf(V2rayCoreManager.getInstance().getConnectedV2rayServerDelay()));
+                    sendB.putExtra("REQUEST_ID", requestId);
+                    sendB.putExtra("DELAY", String.valueOf(V2rayCoreManager.getInstance().getConnectedV2rayServerDelay(delayUrl)));
                     sendBroadcast(sendB);
                 } catch (Exception e) {
                     Log.w("V2rayProxyOnlyService", "Failed to send delay broadcast", e);

@@ -16,14 +16,16 @@ import '../../main.dart' show VioraPanel;
 import 'approved_content.dart';
 import 'import_dialog.dart';
 import '../../platform/tunnel.dart';
+import '../../platform/connection_probe.dart';
 import '../../domain/tunnel_config.dart';
 import '../../data/server_latency.dart';
 
 class ClientState {
   final AccountController account;
-  ClientState({AccountController? account})
-    : account = account ?? AccountController();
-  final tunnel = TunnelController(platformTunnelEngine());
+  ClientState({AccountController? account, TunnelController? tunnel})
+    : account = account ?? AccountController(),
+      tunnel = tunnel ?? TunnelController(platformTunnelEngine());
+  final TunnelController tunnel;
   final applications = <String>{};
   final profiles = <VlessProfile>[];
   final rules = <RoutingRule>[];
@@ -214,6 +216,8 @@ class ClientPage extends StatefulWidget {
   final ValueChanged<int> onNavigate;
   final Future<void> Function(ControlRepository) onRepository;
   final Future<ImportedConnection> Function(String)? loadSubscription;
+  final Future<int?> Function()? connectedProbe;
+  final Future<int> Function(String, int)? measureLatency;
   const ClientPage({
     super.key,
     required this.index,
@@ -224,6 +228,8 @@ class ClientPage extends StatefulWidget {
     required this.onNavigate,
     required this.onRepository,
     this.loadSubscription,
+    this.connectedProbe,
+    this.measureLatency,
     this.desktop = false,
     this.demo = false,
   });
@@ -235,9 +241,66 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   Timer? _maintenanceTimer;
   Timer? _startupMaintenance;
   bool _maintenanceBusy = false;
+  String? _refreshedSelection;
+  bool _reconcilingRefresh = false, _refreshReconnectSilent = true;
+
+  String? get _selectedLink {
+    final state = widget.state, selected = widget.state.selectedProfile;
+    return selected >= 0 && selected < state.profiles.length
+        ? state.profiles[selected].toShareLink()
+        : null;
+  }
+
+  void _subscriptionTunnelChanged() {
+    if (_refreshedSelection == null) return;
+    // Native callbacks can run inside another controller operation. Drain after
+    // that operation has unwound, and never restart a manually stopped session.
+    if (widget.state.tunnel.phase == TunnelPhase.stopping) {
+      _refreshedSelection = null;
+      return;
+    }
+    scheduleMicrotask(() {
+      if (mounted) unawaited(_reconcileRefreshedSelection());
+    });
+  }
+
+  Future<void> _reconcileRefreshedSelection() async {
+    if (!mounted || refreshing || _reconcilingRefresh) return;
+    final target = _refreshedSelection;
+    if (target == null) return;
+    final tunnel = widget.state.tunnel;
+    if (_selectedLink != target) {
+      _refreshedSelection = null;
+      return;
+    }
+    if (tunnel.busy) return;
+    _refreshedSelection = null;
+    if (!tunnel.running) return;
+    _reconcilingRefresh = true;
+    final silent = _refreshReconnectSilent;
+    try {
+      final state = widget.state;
+      final config = state.selectedTunnelConfig();
+      await tunnel.switchServer(
+        config,
+        state.profiles[state.selectedProfile].name,
+        timeout: Duration(
+          seconds: int.parse(state.options['timeout'] as String),
+        ),
+      );
+      if (mounted && !silent && tunnel.error != null) notice(tunnel.error!);
+    } on FormatException catch (error) {
+      if (mounted && !silent) notice(error.message.toString());
+    } finally {
+      _reconcilingRefresh = false;
+      if (mounted && _refreshedSelection != null) _subscriptionTunnelChanged();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.state.tunnel.addListener(_subscriptionTunnelChanged);
     if (Platform.isAndroid || Platform.isWindows || Platform.isLinux) {
       WidgetsBinding.instance.addObserver(this);
       _maintenanceTimer = Timer.periodic(
@@ -254,6 +317,16 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) unawaited(_maintain());
+  }
+
+  @override
+  void didUpdateWidget(covariant ClientPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.state, widget.state)) {
+      oldWidget.state.tunnel.removeListener(_subscriptionTunnelChanged);
+      _refreshedSelection = null;
+      widget.state.tunnel.addListener(_subscriptionTunnelChanged);
+    }
   }
 
   Future<void> _maintain() async {
@@ -298,6 +371,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   void dispose() {
     _maintenanceTimer?.cancel();
     _startupMaintenance?.cancel();
+    widget.state.tunnel.removeListener(_subscriptionTunnelChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -315,6 +389,31 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     );
     if (value == null || !mounted) return;
     applyImport(value);
+  }
+
+  VlessProfile? _subscriptionReplacement(
+    VlessProfile previous,
+    List<VlessProfile> imported,
+  ) {
+    final compatible = <String, VlessProfile>{
+      for (final profile in imported)
+        if (profile.transport == previous.transport &&
+            profile.security == previous.security)
+          profile.toShareLink(): profile,
+    }.values.toList();
+    final endpoint = compatible
+        .where(
+          (profile) =>
+              profile.host.toLowerCase() == previous.host.toLowerCase() &&
+              profile.port == previous.port,
+        )
+        .toList();
+    if (endpoint.length == 1) return endpoint.single;
+    final name = compatible
+        .where((profile) => profile.name == previous.name)
+        .toList();
+    if (name.length == 1) return name.single;
+    return compatible.length == 1 ? compatible.single : null;
   }
 
   bool applyImport(ImportedConnection value, {bool silent = false}) {
@@ -349,23 +448,35 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
       if (!silent) notice('Можно сохранить до 200 серверов');
       return false;
     }
-    final current =
+    final currentProfile =
         state.selectedProfile >= 0 &&
             state.selectedProfile < state.profiles.length
-        ? state.profiles[state.selectedProfile].toShareLink()
+        ? state.profiles[state.selectedProfile]
         : null;
+    final current = currentProfile?.toShareLink();
+    final previousIndex = remaining.indexWhere(
+      (profile) => profile.toShareLink() == current,
+    );
+    // Match replacements only inside the provider that owned the removed
+    // selection. Another provider or a manual import must not steal selection.
+    final replacement =
+        previousIndex < 0 &&
+            currentProfile != null &&
+            value.source != null &&
+            oldLinks.contains(current)
+        ? _subscriptionReplacement(currentProfile, value.profiles)
+        : null;
+    // If no criterion identifies one candidate, retain the existing first
+    // incoming fallback instead of guessing between ambiguous servers.
+    final fallback = (replacement ?? value.profiles.first).toShareLink();
+    final selected = previousIndex >= 0
+        ? previousIndex
+        : remaining.indexWhere((profile) => profile.toShareLink() == fallback);
     setState(() {
       state.profiles
         ..clear()
         ..addAll(remaining);
-      final previousIndex = remaining.indexWhere(
-        (p) => p.toShareLink() == current,
-      );
-      state.selectedProfile = previousIndex >= 0
-          ? previousIndex
-          : remaining.indexWhere(
-              (p) => p.toShareLink() == value.profiles.first.toShareLink(),
-            );
+      state.selectedProfile = selected;
       if (value.source != null) {
         state.subscriptions[value.source!] = value.profiles
             .map((p) => p.toShareLink())
@@ -386,6 +497,10 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   Future<void> checkLatency() async {
     final state = widget.state;
     if (measuring) return;
+    if (state.tunnel.busy) {
+      notice('Дождись завершения подключения или отключения VPN');
+      return;
+    }
     if (state.selectedProfile < 0 ||
         state.selectedProfile >= state.profiles.length) {
       notice('Сначала выбери сервер');
@@ -393,22 +508,48 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     }
     final profile = state.profiles[state.selectedProfile];
     final key = profile.toShareLink();
+    bool selected() =>
+        mounted && identical(widget.state, state) && _selectedLink == key;
     setState(() {
       measuring = true;
       state.latency.remove(key);
     });
     try {
-      final value = await measureServerLatency(profile.host, profile.port);
-      if (!mounted) return;
+      final value = await (widget.measureLatency ?? measureServerLatency)(
+        profile.host,
+        profile.port,
+      );
+      if (!mounted || !identical(widget.state, state)) return;
       setState(() {
         state.latency[key] = value;
       });
-      notice(
-        'Сервер отвечает: $value мс · TCP. При включённом VPN проверка идёт через текущий маршрут.',
-      );
+      if (!selected() || state.tunnel.busy) return;
+      final probe =
+          widget.connectedProbe ??
+          (Platform.isAndroid ? () => AndroidConnectionProbe.measure() : null);
+      if (probe != null && state.tunnel.running) {
+        int? delay;
+        try {
+          delay = await probe();
+        } catch (_) {
+          // Keep the confirmed TCP result separate from a failed core probe.
+        }
+        if (!selected() || !state.tunnel.running || state.tunnel.busy) return;
+        notice(
+          delay != null && delay >= 0
+              ? 'TCP-порт доступен: $value мс; тестовый сайт через VPN ответил за $delay мс.'
+              : 'TCP-порт доступен, но нет ответа тестового сайта через VPN. Проверь другой сервер; этот сайт также может быть недоступен отдельно.',
+        );
+      } else {
+        notice(
+          'TCP-порт доступен: $value мс. Это проверка порта, она не подтверждает передачу данных через VPN.',
+        );
+      }
     } catch (_) {
-      if (mounted) {
-        notice('Сервер не ответил за 5 секунд. Проверь сеть и повтори.');
+      if (selected()) {
+        notice(
+          'TCP-порт сервера не ответил за 5 секунд. Проверь сеть и повтори.',
+        );
       }
     } finally {
       if (mounted) {
@@ -420,7 +561,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   Future<void> refreshSubscriptions({bool silent = false}) async {
-    if (refreshing) return;
+    if (refreshing || _reconcilingRefresh) return;
     if (widget.state.subscriptions.isEmpty) {
       if (!silent) await import();
       return;
@@ -437,8 +578,17 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
         try {
           final result = await load(source);
           if (!mounted) return;
+          final selectedBefore = _selectedLink;
+          final tunnel = widget.state.tunnel;
           if (result.source == source && applyImport(result, silent: true)) {
             updated++;
+            final selectedAfter = _selectedLink;
+            if (selectedBefore != null &&
+                selectedAfter != selectedBefore &&
+                (tunnel.running || tunnel.busy)) {
+              _refreshedSelection = selectedAfter;
+              _refreshReconnectSilent = silent;
+            }
           } else {
             failed++;
           }
@@ -466,12 +616,14 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
         });
       }
     }
+    if (mounted) await _reconcileRefreshedSelection();
   }
 
   Future<void> toggleTunnel() async {
     final tunnel = widget.state.tunnel;
     if (tunnel.busy) return;
     if (tunnel.running) {
+      _refreshedSelection = null;
       await tunnel.disconnect();
       return;
     }
@@ -519,6 +671,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
       notice('Дождись завершения переключения VPN');
       return;
     }
+    _refreshedSelection = null;
     final profile = state.profiles[index];
     try {
       final config = tunnel.running

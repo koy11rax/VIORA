@@ -50,7 +50,7 @@ class QuickTileProfile(context: Context) {
         try {
             V2rayController.StartV2ray(context, profile.name, profile.config,
                 ArrayList(profile.blocked), null, profile.allowed?.let { ArrayList(it) },
-                profile.mtu, profile.reconnect, profile.strict, profile.retries)
+                profile.mtu, profile.reconnect, profile.strict, profile.retries, true)
         } catch (_: Exception) {
             // Includes Android background FGS refusal: never bypass it by opening the UI.
             throw QuickTileException("start_refused")

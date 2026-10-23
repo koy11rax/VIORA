@@ -14,6 +14,7 @@ import dev.amirzr.flutter_v2ray_client.v2ray.utils.AppConfigs;
 import dev.amirzr.flutter_v2ray_client.v2ray.utils.Utilities;
 
 import java.util.ArrayList;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -56,6 +57,14 @@ public class V2rayController {
             final ArrayList<String> blocked_apps, final ArrayList<String> bypass_subnets,
             final ArrayList<String> allowed_apps, final int mtu,
             final boolean reconnect, final boolean strict, final int retries) {
+        StartV2ray(context, remark, config, blocked_apps, bypass_subnets,
+                allowed_apps, mtu, reconnect, strict, retries, false);
+    }
+
+    public static void StartV2ray(final Context context, final String remark, final String config,
+            final ArrayList<String> blocked_apps, final ArrayList<String> bypass_subnets,
+            final ArrayList<String> allowed_apps, final int mtu,
+            final boolean reconnect, final boolean strict, final int retries, final boolean fromQuickTile) {
         AppConfigs.V2RAY_CONFIG = Utilities.parseV2rayJsonFile(remark, config, blocked_apps, bypass_subnets);
         if (AppConfigs.V2RAY_CONFIG == null) {
             throw new IllegalArgumentException("Invalid VPN configuration");
@@ -79,6 +88,7 @@ public class V2rayController {
         }
         start_intent.putExtra("COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE);
         start_intent.putExtra("V2RAY_CONFIG", AppConfigs.V2RAY_CONFIG);
+        start_intent.putExtra("FROM_QUICK_TILE", fromQuickTile);
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.N_MR1) {
             context.startForegroundService(start_intent);
         } else {
@@ -101,6 +111,11 @@ public class V2rayController {
     }
 
     public static long getConnectedV2rayServerDelay(Context context) {
+        return getConnectedV2rayServerDelay(context, AppConfigs.DELAY_URL);
+    }
+
+    public static long getConnectedV2rayServerDelay(Context context, final String url) {
+        if (!V2rayCoreManager.isSafeDelayUrl(url)) return -1;
         if (V2rayController.getConnectionState() != AppConfigs.V2RAY_STATES.V2RAY_CONNECTED) {
             return -1;
         }
@@ -113,32 +128,45 @@ public class V2rayController {
             return -1;
         }
         final long[] delay = { -1 };
-
+        final String requestId = UUID.randomUUID().toString();
         final CountDownLatch latch = new CountDownLatch(1);
         check_delay.putExtra("COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.MEASURE_DELAY);
-        context.startService(check_delay);
+        check_delay.putExtra("DELAY_URL", url);
+        check_delay.putExtra("REQUEST_ID", requestId);
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context arg0, Intent arg1) {
-                String delayString = arg1.getExtras().getString("DELAY");
-                delay[0] = Long.parseLong(delayString);
-                context.unregisterReceiver(this);
-                latch.countDown();
+                if (arg1 == null || !requestId.equals(arg1.getStringExtra("REQUEST_ID"))) return;
+                try {
+                    delay[0] = Long.parseLong(arg1.getStringExtra("DELAY"));
+                    latch.countDown();
+                } catch (RuntimeException ignored) { /* Wait for a matching well-formed result. */ }
             }
         };
 
         // Use package-specific intent filter to isolate broadcasts per app
         String packageName = context.getPackageName();
         IntentFilter delayIntentFilter = new IntentFilter(packageName + ".CONNECTED_V2RAY_SERVER_DELAY");
-        ContextCompat.registerReceiver(context, receiver, delayIntentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
-
+        boolean registered = false;
         try {
-            boolean received = latch.await(3000, TimeUnit.MILLISECONDS);
+            // Register before dispatch: an already warm core can reply immediately.
+            ContextCompat.registerReceiver(context, receiver, delayIntentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
+            registered = true;
+            context.startService(check_delay);
+            // Native MeasureDelay is bounded by 12s; allow the IPC result to arrive.
+            boolean received = latch.await(15000, TimeUnit.MILLISECONDS);
             if (!received) {
                 return -1;
             }
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Thread.currentThread().interrupt();
+            return -1;
+        } catch (RuntimeException e) {
+            return -1;
+        } finally {
+            if (registered) {
+                try { context.unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) { }
+            }
         }
         return delay[0];
     }

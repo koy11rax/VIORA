@@ -64,3 +64,17 @@ It includes synchronized running/statistics access and cleanup of partially
 started core instances. The Java getIsRunning method used here was inspected
 in the newly built classes.jar and retains its signature. See
 ../androidlibxraylite/VIORA-SOURCE.md for source changes, provenance and limits.
+
+## Android recovery and active probe — 2026-10-23
+
+- Track physical networks using callback snapshots. Protected sockets follow
+  Android's default network; do not advertise explicit Network.bindSocket use
+  when no sockets are bound that way. Keep callback lifecycle on one handler.
+- Broadcast the beginning of accepted tile/system starts with a private source
+  marker so Flutter can distinguish a fresh session from late old events.
+- Pass the active HTTPS probe URL across the daemon boundary explicitly, using
+  a request ID, receiver-before-send ordering, bounded wait and final cleanup.
+  Permit only the designated HTTPS generate_204 endpoints; retain certificate
+  and hostname verification. The existing source-built AAR is unchanged.
+- A successful active-core probe is not a TUN/DNS/leak test. No certificate
+  bypass, plaintext fallback, user-data reset or host network change is added.

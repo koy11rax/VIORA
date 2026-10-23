@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.CountDownTimer;
 import android.os.SystemClock;
 import java.util.Locale;
+import java.net.URI;
 import android.util.Log;
 import android.util.Pair;
 
@@ -470,10 +471,29 @@ public final class V2rayCoreManager {
     }
 
     public Long getConnectedV2rayServerDelay() {
+        return getConnectedV2rayServerDelay(AppConfigs.DELAY_URL);
+    }
+
+    /** Diagnostic URLs carry no account data and must use authenticated HTTPS. */
+    public static boolean isSafeDelayUrl(String url) {
+        if (url == null || url.length() > 512) return false;
         try {
-            if (coreController == null)
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            return "https".equals(uri.getScheme()) && host != null
+                    && ("www.gstatic.com".equals(host) || "www.google.com".equals(host))
+                    && "/generate_204".equals(uri.getRawPath())
+                    && (uri.getPort() == -1 || uri.getPort() == 443)
+                    && uri.getRawUserInfo() == null && uri.getRawQuery() == null
+                    && uri.getRawFragment() == null;
+        } catch (Exception ignored) { return false; }
+    }
+
+    public Long getConnectedV2rayServerDelay(final String url) {
+        try {
+            if (!isSafeDelayUrl(url) || coreController == null || !isV2rayCoreRunning())
                 return -1L;
-            return coreController.measureDelay(AppConfigs.DELAY_URL);
+            return coreController.measureDelay(url);
         } catch (Exception e) {
             return -1L;
         }

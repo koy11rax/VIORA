@@ -21,7 +21,7 @@ class TunnelStats {
   final String state, duration;
   final String? errorCode;
   final int upload, download;
-  final bool alwaysOn, lockdown;
+  final bool alwaysOn, lockdown, externalStart;
   const TunnelStats(
     this.state, {
     this.duration = '00:00:00',
@@ -30,6 +30,7 @@ class TunnelStats {
     this.errorCode,
     this.alwaysOn = false,
     this.lockdown = false,
+    this.externalStart = false,
   });
 }
 
@@ -352,7 +353,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelStatusReader {
 
   static TunnelStats decodeStatus(dynamic event) {
     final data = List<dynamic>.from(event as List);
-    if (data.length < 6 || data.length > 9) {
+    if (data.length < 6 || data.length > 10) {
       throw const FormatException('VPN status');
     }
     return TunnelStats(
@@ -363,6 +364,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelStatusReader {
       errorCode: data.length > 6 && data[6] != '' ? data[6] as String : null,
       alwaysOn: data.length > 7 && data[7] == 'true',
       lockdown: data.length > 8 && data[8] == 'true',
+      externalStart: data.length > 9 && data[9] == 'true',
     );
   }
 
@@ -533,6 +535,10 @@ class TunnelController extends ChangeNotifier {
       error = null;
       _change(TunnelPhase.active);
     } else if (value.state == 'CONNECTING') {
+      // A timed-out app attempt cannot resurrect itself. A separately accepted
+      // tile/system start is an explicit new session from the private service.
+      if (phase == TunnelPhase.failed && !value.externalStart) return;
+      if (value.externalStart) error = null;
       if (phase != TunnelPhase.stopping) _change(TunnelPhase.connecting);
     } else if (value.state == 'DISCONNECTED') {
       if (_stopAcknowledgement?.isCompleted == false) {
@@ -556,6 +562,7 @@ class TunnelController extends ChangeNotifier {
     } catch (_) {
     } finally {
       _operation = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -651,6 +658,7 @@ class TunnelController extends ChangeNotifier {
       } catch (_) {}
     } finally {
       _operation = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -678,6 +686,7 @@ class TunnelController extends ChangeNotifier {
       _change(TunnelPhase.failed);
     } finally {
       _operation = false;
+      if (!_disposed) notifyListeners();
     }
   }
 

@@ -50,6 +50,7 @@ public class V2rayReceiver extends BroadcastReceiver {
             list.add(intent.getStringExtra("ERROR_CODE") == null ? "" : intent.getStringExtra("ERROR_CODE"));
             list.add(Boolean.toString(intent.getBooleanExtra("ALWAYS_ON", false)));
             list.add(Boolean.toString(intent.getBooleanExtra("LOCKDOWN", false)));
+            list.add(Boolean.toString(intent.getBooleanExtra("EXTERNAL_START", false)));
             vpnStatusSink.success(list);
         } catch (Exception e) {
             Log.e("V2rayReceiver", "onReceive failed", e);
