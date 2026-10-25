@@ -64,7 +64,7 @@ foreach ($pair in @(
     @('ProductLanguage','1049'), @('Manufacturer','Viora'), @('ALLUSERS','1'),
     @('INSTALLLEVEL','1'), @('ARPNOMODIFY','1'), @('ARPURLINFOABOUT','https://vpnfn2345.duckdns.org'),
     @('ARPPRODUCTICON','VioraIcon'), @('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;INSTALLDIR'),
-    @('MSIRESTARTMANAGERCONTROL','Disable'), @('REBOOT','ReallySuppress')
+    @('REBOOT','ReallySuppress')
 )) { Insert Property @('Property','Value') $pair }
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('TARGETDIR',$null,'SourceDir')
 Insert Directory @('Directory','Directory_Parent','DefaultDir') @('ProgramFiles64Folder','TARGETDIR','.')
@@ -115,6 +115,7 @@ foreach ($line in @('.Set Cabinet=on','.Set Compress=on','.Set CompressionType=L
 $vioraSequence = 0
 $vioraMainComponent = ''
 $vioraServiceComponent = ''
+$vioraServiceFile = ''
 $vioraFirewallFile = ''
 foreach ($file in (Get-ChildItem -LiteralPath $vioraBundle -Recurse -File | Sort-Object FullName)) {
     if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Bundle must not contain reparse points' }
@@ -129,22 +130,34 @@ foreach ($file in (Get-ChildItem -LiteralPath $vioraBundle -Recurse -File | Sort
     $identity = if ($isEngine) { 'Engine/' + $relative } else { $relative }
     Insert Component @('Component','ComponentId','Directory_','Attributes','Condition','KeyPath') @($component,(StableGuid $identity),$directory,256,$null,$key)
     Insert FeatureComponents @('Feature_','Component_') @('Viora',$component)
-    $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($file.FullName)
-    $fileVersion = if ($versionInfo.FileMajorPart -gt 0) { '{0}.{1}.{2}.{3}' -f $versionInfo.FileMajorPart,$versionInfo.FileMinorPart,$versionInfo.FileBuildPart,$versionInfo.FilePrivatePart } else { $null }
+    # Read VS_VERSION_INFO through Windows Installer itself, in its exact
+    # four-part database format. Major version 0 is valid (Wintun 0.14.1.0);
+    # dropping it marks the DLL unversioned and can skip it during an upgrade.
+    # Unversioned Go binaries and ordinary data files correctly return null.
+    $fileVersion = $vioraInstaller.FileVersion($file.FullName,$false)
     Insert File @('File','Component_','FileName','FileSize','Version','Language','Attributes','Sequence') @($key,$component,($key + '|' + $file.Name),[int]$file.Length,$fileVersion,$null,16384,$vioraSequence)
     $vioraDdf.Add('"' + $file.FullName + '" ' + $key)
-    if ($relative -eq 'viora_tunnel.exe') { $vioraServiceComponent = $component }
+    if ($relative -eq 'viora_tunnel.exe') { $vioraServiceComponent = $component; $vioraServiceFile = $key }
     if ($relative -eq 'viora_firewall.exe') { $vioraFirewallFile = $key }
     if ($relative -eq 'Viora.exe') { $vioraMainComponent = $component }
 }
-if (!$vioraServiceComponent) { throw 'VPN service component missing' }
+if (!$vioraServiceComponent -or !$vioraServiceFile) { throw 'VPN service component missing' }
 if (!$vioraFirewallFile) { throw 'Persistent firewall component missing' }
 # Deferred SYSTEM action, before removing binaries; major upgrades preserve the
 # policy. A failure aborts uninstall rather than leaving an unrecoverable lock.
 Insert CustomAction @('Action','Type','Source','Target') @('RemoveVioraProtection',3090,$vioraFirewallFile,'disable')
 Insert InstallExecuteSequence @('Action','Condition','Sequence') @('RemoveVioraProtection','REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE',1950)
 Insert ServiceInstall @('ServiceInstall','Name','DisplayName','ServiceType','StartType','ErrorControl','LoadOrderGroup','Dependencies','StartName','Password','Arguments','Component_','Description') @('VioraTunnel','VioraTunnel','VIORA VPN',16,2,32769,$null,$null,$null,$null,'--service',$vioraServiceComponent,'VIORA VPN tunnel service')
-Insert ServiceControl @('ServiceControl','Name','Event','Arguments','Wait','Component_') @('VioraTunnel','VioraTunnel',163,$null,1,$vioraServiceComponent)
+Insert ServiceControl @('ServiceControl','Name','Event','Arguments','Wait','Component_') @('VioraTunnel','VioraTunnel',162,$null,1,$vioraServiceComponent)
+# Use the installed, protected helper for one checked service-start attempt
+# with a 15-second state-poll budget. Windows manages blocking SCM calls.
+# 3090 = EXE from File table + deferred + NoImpersonate; no Continue
+# or Async bit, so failure aborts installation and invokes MSI rollback.
+# Action state 3 includes actual helper reinstallation/repair: StopServices
+# stops that component too. Unchanged/no-action and removal must not start it.
+$vioraStartCondition = 'NOT (REMOVE~="ALL") AND ($' + $vioraServiceComponent + '=3)'
+Insert CustomAction @('Action','Type','Source','Target') @('StartVioraService',3090,$vioraServiceFile,'--install-start')
+Insert InstallExecuteSequence @('Action','Condition','Sequence') @('StartVioraService',$vioraStartCondition,5900)
 Insert Media @('DiskId','LastSequence','DiskPrompt','Cabinet','VolumeLabel','Source') @(1,$vioraSequence,$null,'#payload.cab',$null,$null)
 foreach ($directory in @('ProgramMenuFolder','DesktopFolder')) {
     Insert Shortcut @('Shortcut','Directory_','Name','Component_','Target','Arguments','Description','Hotkey','Icon_','IconIndex','ShowCmd','WkDir') @($directory,$directory,'VIORA',$vioraMainComponent,'[INSTALLDIR]Viora.exe',$null,'Viora VPN',$null,'VioraIcon',0,1,'INSTALLDIR')
@@ -165,7 +178,7 @@ foreach ($entry in @(
  @('InstallValidate',1400),@('InstallInitialize',1500),@('RemoveExistingProducts',1550),
  @('ProcessComponents',1600),@('UnpublishFeatures',1800),@('StopServices',1900),@('DeleteServices',2000),@('RemoveShortcuts',3200),
  @('RemoveFiles',3500),@('RemoveFolders',3600),@('CreateFolders',3700),@('InstallFiles',4000),
- @('CreateShortcuts',4500),@('InstallServices',5800),@('StartServices',5900),@('RegisterUser',6000),@('RegisterProduct',6100),
+ @('CreateShortcuts',4500),@('InstallServices',5800),@('RegisterUser',6000),@('RegisterProduct',6100),
  @('PublishFeatures',6300),@('PublishProduct',6400),@('InstallFinalize',6600)
 )) { Insert InstallExecuteSequence @('Action','Condition','Sequence') @($entry[0],$null,[int]$entry[1]) }
 foreach ($entry in @(@('FindRelatedProducts',25),@('AppSearch',50),@('LaunchConditions',100),@('CostInitialize',800),@('FileCost',900),@('CostFinalize',1000),@('ExecuteAction',1300))) {

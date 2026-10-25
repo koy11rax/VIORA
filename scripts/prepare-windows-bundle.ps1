@@ -33,7 +33,7 @@ Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\wintun\wintun\LICENSE.t
 @"
 VIORA Windows $Version
 
-Запусти установщик Viora-Windows-$Version-Setup.exe. Он позволяет выбрать папку
+Запусти установщик ${OutputName}-Setup.exe. Он позволяет выбрать папку
 приложения и один раз устанавливает защищённую службу VPN. При последующих
 подключениях и смене серверов повторный запрос администратора не требуется.
 

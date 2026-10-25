@@ -33,22 +33,75 @@ func applyPlatformConfig(map[string]any) {}
 func applySystemProtection(settings map[string]any) {
 	settings["autoSystemWfpBlockLeak"] = []string{"dns", "misconfigtun"}
 }
+
+type installTrustReason string
+
+const (
+	installTrustOK                installTrustReason = ""
+	installTrustExecutable        installTrustReason = "executable"
+	installTrustKnownFolder       installTrustReason = "knownfolder"
+	installTrustDirectoryMismatch installTrustReason = "directorymismatch"
+	installTrustEngineAttributes  installTrustReason = "engineattrs"
+	installTrustCoreAttributes    installTrustReason = "coreattrs"
+	installTrustXrayAttributes    installTrustReason = "xrayattrs"
+	installTrustDriverAttributes  installTrustReason = "driverattrs"
+	installTrustReparse           installTrustReason = "reparse"
+)
+
+// Reasons are fixed diagnostic identifiers, never OS error text or paths.
+func (reason installTrustReason) Error() string {
+	switch reason {
+	case installTrustExecutable, installTrustKnownFolder, installTrustDirectoryMismatch,
+		installTrustEngineAttributes, installTrustCoreAttributes, installTrustXrayAttributes,
+		installTrustDriverAttributes, installTrustReparse:
+		return string(reason)
+	default:
+		return "unknown"
+	}
+}
+
 func trustedInstall(directory string) bool {
-	root, err := windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0)
-	if err != nil || !strings.EqualFold(directory, filepath.Join(root, "Viora", "Engine")) {
-		return false
+	return trustedInstallFailure(directory) == installTrustOK
+}
+
+func trustedInstallFailure(directory string) installTrustReason {
+	return trustedInstallFailureWith(directory,
+		func() (string, error) { return windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0) },
+		func(path string) (uint32, error) {
+			wide, err := windows.UTF16PtrFromString(path)
+			if err != nil {
+				return 0, err
+			}
+			return windows.GetFileAttributes(wide)
+		})
+}
+
+func trustedInstallFailureWith(directory string, knownRoot func() (string, error), attributes func(string) (uint32, error)) installTrustReason {
+	root, err := knownRoot()
+	if err != nil {
+		return installTrustKnownFolder
 	}
-	for _, p := range []string{directory, filepath.Join(directory, "core"), filepath.Join(directory, "core", "xray.exe"), filepath.Join(directory, "core", "wintun.dll")} {
-		wide, err := windows.UTF16PtrFromString(p)
+	if !strings.EqualFold(directory, filepath.Join(root, "Viora", "Engine")) {
+		return installTrustDirectoryMismatch
+	}
+	for _, item := range []struct {
+		path   string
+		reason installTrustReason
+	}{
+		{directory, installTrustEngineAttributes},
+		{filepath.Join(directory, "core"), installTrustCoreAttributes},
+		{filepath.Join(directory, "core", "xray.exe"), installTrustXrayAttributes},
+		{filepath.Join(directory, "core", "wintun.dll"), installTrustDriverAttributes},
+	} {
+		attrs, err := attributes(item.path)
 		if err != nil {
-			return false
+			return item.reason
 		}
-		attrs, err := windows.GetFileAttributes(wide)
-		if err != nil || attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-			return false
+		if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+			return installTrustReparse
 		}
 	}
-	return true
+	return installTrustOK
 }
 func verifiedDriver(directory, hash string) bool {
 	return verifiedFile(filepath.Join(directory, "core", "wintun.dll"), hash)

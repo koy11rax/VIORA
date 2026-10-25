@@ -78,8 +78,12 @@ for ($i=0;$i -lt $files.Count;$i++) {
     $row=$files[$i]; $key=$row.StringData(1)
     if ($components[$row.StringData(2)] -ne $key) { throw 'Invalid component keypath' }
     if ($row.StringData(3).Split('|')[-1] -ne $originals[$i].Name) { throw 'Unexpected file name' }
+    $expectedFileVersion=[string]$installer.FileVersion($originals[$i].FullName,$false)
+    if ($row.StringData(5) -ne $expectedFileVersion) { throw "File version metadata mismatch: $key" }
     if ((Get-FileHash -LiteralPath (Join-Path $stage $key)).Hash -ne (Get-FileHash -LiteralPath $originals[$i].FullName).Hash) { throw "Payload mismatch: $key" }
 }
+$restartManager=@(Rows 'SELECT * FROM `Property`' | Where-Object { $_.StringData(1) -eq 'MSIRESTARTMANAGERCONTROL' })
+if ($restartManager.Count -ne 0) { throw 'Package must keep default Windows Restart Manager behavior' }
 # Read-only standard actions: no installation, registry writes or elevation.
 $session=$installer.OpenPackage($msi,1)
 if ($InstallDirectory) { $session.Property('INSTALLDIR')=$InstallDirectory }
@@ -120,12 +124,19 @@ if ($serviceFile.Count -ne 1 -or $serviceFile[0].StringData(3).Split('|')[-1] -n
 $serviceComponent=@(Rows 'SELECT * FROM `Component`' | Where-Object { $_.StringData(1) -eq $serviceRow.StringData(12) })
 if ($serviceComponent[0].StringData(3) -ne 'EngineDir') { throw 'Service must be in fixed protected Engine directory' }
 $control=@(Rows 'SELECT * FROM `ServiceControl`')
-if ($control.Count -ne 1 -or $control[0].IntegerData(3) -ne 163 -or $control[0].IntegerData(5) -ne 1) { throw 'Service stop/start/uninstall actions missing' }
+if ($control.Count -ne 1 -or $control[0].StringData(2) -ne 'VioraTunnel' -or $control[0].IntegerData(3) -ne 162 -or $control[0].StringData(4) -or $control[0].IntegerData(5) -ne 1 -or $control[0].StringData(6) -ne $serviceRow.StringData(12)) { throw 'Service stop/delete/wait metadata must not use the standard start event' }
 $executeActions=@{}
 foreach ($entry in (Rows 'SELECT * FROM `InstallExecuteSequence`')) { $executeActions[$entry.StringData(1)]=$entry.IntegerData(3) }
-foreach ($action in @('StopServices','DeleteServices','InstallServices','StartServices')) { if (!$executeActions.ContainsKey($action)) { throw "Missing service action: $action" } }
-if ($executeActions['InstallServices'] -le $executeActions['InstallFiles'] -or $executeActions['StartServices'] -le $executeActions['InstallServices']) { throw 'Service actions ordered incorrectly' }
-'Verified protected VPN service metadata for automatic startup, stop and removal.'
+foreach ($action in @('CostFinalize','InstallInitialize','InstallFiles','StopServices','DeleteServices','InstallServices','InstallFinalize')) { if (!$executeActions.ContainsKey($action)) { throw "Missing service action: $action" } }
+if ($executeActions.ContainsKey('StartServices')) { throw 'Standard service startup must be replaced by the bounded helper action' }
+$startAction=@(Rows 'SELECT * FROM `CustomAction`' | Where-Object { $_.StringData(1) -eq 'StartVioraService' })
+if ($startAction.Count -ne 1 -or $startAction[0].IntegerData(2) -ne 3090 -or $startAction[0].StringData(3) -ne $serviceKey -or $startAction[0].StringData(4) -ne '--install-start') { throw 'Bounded service start must be a checked deferred SYSTEM action from the protected helper' }
+$startSequence=@(Rows 'SELECT * FROM `InstallExecuteSequence`' | Where-Object { $_.StringData(1) -eq 'StartVioraService' })
+$startCondition='NOT (REMOVE~="ALL") AND ($' + $serviceRow.StringData(12) + '=3)'
+if ($startSequence.Count -ne 1 -or $startSequence[0].StringData(2) -ne $startCondition -or $startSequence[0].IntegerData(3) -ne 5900) { throw 'Unsafe bounded service start condition or sequence' }
+if (@(Rows 'SELECT * FROM `InstallUISequence`' | Where-Object { $_.StringData(1) -eq 'StartVioraService' }).Count -ne 0) { throw 'Deferred service startup must only run in the execute sequence' }
+if ($executeActions['InstallServices'] -le $executeActions['InstallFiles'] -or $executeActions['StartVioraService'] -le $executeActions['InstallServices'] -or $executeActions['StartVioraService'] -ge $executeActions['InstallFinalize'] -or $executeActions['StartVioraService'] -le $executeActions['InstallInitialize'] -or $executeActions['StartVioraService'] -le $executeActions['CostFinalize']) { throw 'Service actions ordered incorrectly' }
+'Verified service startup metadata: bounded helper action, checked failure, stop/delete and automatic service registration. No service was started by verification.'
 $firewall=@($files | Where-Object { $_.StringData(3).Split('|')[-1] -eq 'viora_firewall.exe' })
 if ($firewall.Count -eq 1) {
  $action=@(Rows 'SELECT * FROM `CustomAction`' | Where-Object { $_.StringData(1) -eq 'RemoveVioraProtection' })

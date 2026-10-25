@@ -64,7 +64,8 @@ func (tunnelService) Execute(_ []string, requests <-chan svc.ChangeRequest, chan
 	owners, err := installedOwnerStore()
 	if err != nil {
 		listener.Close()
-		return false, 3
+		// This is an application validation failure, not Win32 PATH_NOT_FOUND.
+		return true, trustServiceCode(err)
 	}
 	go func() {
 		defer close(done)

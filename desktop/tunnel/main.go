@@ -287,7 +287,7 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 }
 
 func main() {
-	if protectionCLI() || restoreProtection() {
+	if installerCLI() || protectionCLI() || restoreProtection() {
 		return
 	}
 	if platformService() {

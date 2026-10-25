@@ -72,8 +72,11 @@ type fileOwnerStore struct{ path string }
 
 func installedOwnerStore() (ownerStore, error) {
 	executable, err := os.Executable()
-	if err != nil || !trustedInstall(filepath.Dir(executable)) {
-		return nil, errors.New("untrusted owner directory")
+	if err != nil {
+		return nil, installTrustExecutable
+	}
+	if reason := trustedInstallFailure(filepath.Dir(executable)); reason != installTrustOK {
+		return nil, reason
 	}
 	return fileOwnerStore{filepath.Join(filepath.Dir(executable), "protection-owner.sid")}, nil
 }
