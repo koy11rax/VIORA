@@ -4,6 +4,38 @@ import 'dart:io';
 import '../domain/profile.dart';
 import '../platform/native_bridge.dart';
 
+enum SubscriptionImportReason { deviceRevoked, providerPlaceholder }
+
+/// Only fixed public explanations may cross from a provider response to UI.
+final class SubscriptionImportException extends FormatException {
+  final SubscriptionImportReason reason;
+  const SubscriptionImportException(this.reason)
+    : super(
+        reason == SubscriptionImportReason.deviceRevoked
+            ? 'Это устройство отвязано от подписки. Включи существующее устройство в боте и обнови подписку.'
+            : 'Бот не выдал рабочие серверы. Проверь срок подписки и лимит устройств в боте.',
+      );
+}
+
+SubscriptionImportException _placeholderFailure(Uri? uri) {
+  var label = '';
+  try {
+    label = Uri.decodeComponent(uri?.fragment ?? '').toLowerCase();
+  } on FormatException {
+    // Malformed provider text remains a generic placeholder, never raw output.
+  }
+  final revoked =
+      label.contains('устройство отвязано') ||
+      label.contains('device revoked') ||
+      label.contains('device is revoked') ||
+      RegExp(r'^\s*revoked(?:\b|[\s·:;,.!-])').hasMatch(label);
+  return SubscriptionImportException(
+    revoked
+        ? SubscriptionImportReason.deviceRevoked
+        : SubscriptionImportReason.providerPlaceholder,
+  );
+}
+
 class ImportedConnection {
   final List<VlessProfile> profiles;
   final String? source;
@@ -54,10 +86,10 @@ List<VlessProfile> decodeSubscription(String body) {
     final value = line.trim();
     if (value.isEmpty || value.startsWith('#')) continue;
     final hint = Uri.tryParse(value);
-    if (hint?.host == '127.0.0.1' && hint?.port == 1) {
-      throw const FormatException(
-        'Бот не выдал рабочие серверы. Проверь срок подписки и лимит устройств в боте.',
-      );
+    if (hint != null &&
+        const {'127.0.0.1', '0.0.0.0', 'localhost'}.contains(hint.host) &&
+        hint.port == 1) {
+      throw _placeholderFailure(hint);
     }
     if (!value.startsWith('vless://')) {
       unsupported++;
@@ -69,9 +101,7 @@ List<VlessProfile> decodeSubscription(String body) {
       if (profile.host == '127.0.0.1' ||
           profile.host == '0.0.0.0' ||
           profile.port == 1) {
-        throw const FormatException(
-          'Бот не выдал рабочие серверы. Проверь срок подписки и лимит устройств в боте.',
-        );
+        throw _placeholderFailure(hint);
       }
       profiles[profile.toShareLink()] = profile;
     } on FormatException {

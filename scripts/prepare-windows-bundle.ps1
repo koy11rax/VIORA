@@ -1,12 +1,13 @@
 param(
     [Parameter(Mandatory=$true)][string]$BundlePath,
-    [string]$OutputName = 'Viora-Windows-1.0.0'
+    [string]$OutputName = 'Viora-Windows-1.0.0',
+    [string]$Version = '1.0.0'
 )
 $ErrorActionPreference = 'Stop'
 $vioraRoot = Split-Path $PSScriptRoot -Parent
 $vioraBundle = (Resolve-Path -LiteralPath $BundlePath).Path
 $vioraOutput = Join-Path $vioraRoot ('artifacts\' + $OutputName)
-if ($OutputName -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$' -or (Test-Path -LiteralPath $vioraOutput)) { throw 'Invalid or existing output directory' }
+if ($Version -notmatch '^\d+\.\d+\.\d+$' -or $OutputName -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$' -or (Test-Path -LiteralPath $vioraOutput)) { throw 'Invalid version or existing output directory' }
 foreach ($file in @('viora_client.exe','flutter_windows.dll','data')) {
     if (!(Test-Path -LiteralPath (Join-Path $vioraBundle $file))) { throw "Missing $file" }
 }
@@ -29,10 +30,10 @@ $vioraLicenses = Join-Path $vioraOutput 'licenses'
 New-Item -ItemType Directory -Path $vioraLicenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\xray-main\Xray-core-701af60772cda123492f86e383e1fdba066614a9\LICENSE') -Destination (Join-Path $vioraLicenses 'Xray-MPL-2.0.txt')
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\wintun\wintun\LICENSE.txt') -Destination (Join-Path $vioraLicenses 'Wintun-LICENSE.txt')
-@'
-VIORA Windows 1.0.0
+@"
+VIORA Windows $Version
 
-Запусти установщик Viora-Windows-1.0.0-Setup.exe. Он позволяет выбрать папку
+Запусти установщик Viora-Windows-$Version-Setup.exe. Он позволяет выбрать папку
 приложения и один раз устанавливает защищённую службу VPN. При последующих
 подключениях и смене серверов повторный запрос администратора не требуется.
 
@@ -54,11 +55,12 @@ IPv6 блокируется. Постоянную системную блоки�
 сервер. Настройки и зашифрованные данные аккаунта сохраняются при обновлении.
 Текущая привязка HWID не изменена.
 
-По просьбе владельца при подготовке этой версии VPN не запускался,
-проверки реального соединения не выполнялись. Подпись издателя для EXE/MSI
+Результаты проверок конкретной сборки смотри в примечаниях к выпуску.
+Если устройство отвязано в боте, разреши существующий HWID и обнови подписку.
+Подпись издателя для EXE/MSI
 не настроена; Windows может показывать предупреждение SmartScreen.
 
 Xray (MPL-2.0): https://github.com/XTLS/Xray-core/tree/701af60772cda123492f86e383e1fdba066614a9
 Wintun 0.14.1: https://www.wintun.net/ (официальный подписанный драйвер)
-'@ | Set-Content -LiteralPath (Join-Path $vioraOutput 'READ-ME.txt') -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $vioraOutput 'READ-ME.txt') -Encoding utf8
 Get-Item -LiteralPath $vioraOutput

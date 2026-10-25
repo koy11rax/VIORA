@@ -214,7 +214,7 @@ func sanitizeConfig(data []byte) (map[string]any, error) {
 		rules = append(rules, map[string]any{"type": "field", "process": processes, "outboundTag": "proxy"}, map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": "direct"})
 	}
 	result := map[string]any{
-		"log": map[string]any{"loglevel": "warning"},
+		"log": map[string]any{"loglevel": "info", "access": "none", "dnsLog": false},
 		"dns": map[string]any{"servers": dns.Servers, "queryStrategy": "UseIPv4", "tag": "dns-internal"},
 		"inbounds": []any{map[string]any{"tag": "tun", "protocol": "tun", "settings": map[string]any{
 			"name": "viora0", "desc": "Viora", "mtu": mtu, "userLevel": 8,

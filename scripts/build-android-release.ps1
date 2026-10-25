@@ -2,8 +2,8 @@ param(
     [string]$SigningDirectory = "$env:USERPROFILE\.codex\signing\viora",
     [string]$JavaHome = 'D:\Android Studio\jbr',
     [string]$AndroidSdk = "$env:LOCALAPPDATA\Android\Sdk",
-    [string]$VersionName = '1.0.2',
-    [int]$VersionCode = 32,
+    [string]$VersionName = '1.0.3',
+    [int]$VersionCode = 33,
     [switch]$InitializeKey,
     [switch]$UseGoogleMirror
 )

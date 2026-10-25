@@ -573,6 +573,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     widget.state.lastSubscriptionRefresh = DateTime.now();
     try {
       var updated = 0, failed = 0;
+      SubscriptionImportReason? safeReason;
       final load = widget.loadSubscription ?? SubscriptionImporter().load;
       for (final source in widget.state.subscriptions.keys.toList()) {
         try {
@@ -592,6 +593,13 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
           } else {
             failed++;
           }
+        } on SubscriptionImportException catch (error) {
+          if (!mounted) return;
+          failed++;
+          if (safeReason == null ||
+              error.reason == SubscriptionImportReason.deviceRevoked) {
+            safeReason = error.reason;
+          }
         } catch (_) {
           if (!mounted) return;
           // One expired or unreachable provider must not block the others.
@@ -601,12 +609,20 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
       }
       if (!silent) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        final summary = failed == 0
+            ? 'Подписки обновлены: $updated.'
+            : updated == 0
+            ? 'Не удалось обновить подписки. Прежние серверы сохранены.'
+            : 'Обновлено подписок: $updated. Не удалось обновить: $failed. Прежние серверы этих подписок сохранены.';
+        final explanation = safeReason == null
+            ? null
+            : SubscriptionImportException(safeReason).message;
         notice(
-          failed == 0
-              ? 'Подписки обновлены: $updated.'
+          explanation == null
+              ? summary
               : updated == 0
-              ? 'Не удалось обновить подписки. Прежние серверы сохранены.'
-              : 'Обновлено подписок: $updated. Не удалось обновить: $failed. Прежние серверы этих подписок сохранены.',
+              ? '$explanation Прежние серверы сохранены.'
+              : '$summary $explanation',
         );
       }
     } finally {

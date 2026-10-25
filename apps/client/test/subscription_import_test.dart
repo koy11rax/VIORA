@@ -74,6 +74,111 @@ class Client implements HttpClient {
 }
 
 void main() {
+  test(
+    'known percent-encoded revoked placeholders have a fixed actionable reason',
+    () {
+      for (final label in [
+        'Устройство отвязано · обратитесь в поддержку через бота',
+        'DEVICE REVOKED',
+        'Device is revoked',
+        'revoked',
+      ]) {
+        final placeholder =
+            'vless://00000000-0000-4000-8000-000000000000@127.0.0.1:1?security=none&type=tcp#${Uri.encodeComponent(label)}';
+        for (final body in [
+          placeholder,
+          base64.encode(utf8.encode(placeholder)),
+        ]) {
+          expect(
+            () => decodeSubscription(body),
+            throwsA(
+              isA<SubscriptionImportException>()
+                  .having(
+                    (error) => error.reason,
+                    'reason',
+                    SubscriptionImportReason.deviceRevoked,
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains('Включи существующее устройство в боте'),
+                  )
+                  .having((error) => error.source, 'source', isNull),
+            ),
+          );
+        }
+      }
+    },
+  );
+
+  test('unknown placeholders never expose their server label or embedded URL', () {
+    const privateLabel =
+        'Unknown provider error https://private.example.invalid/sub/private-token';
+    for (final host in ['127.0.0.1', '0.0.0.0', 'localhost']) {
+      final placeholder =
+          'vless://00000000-0000-4000-8000-000000000000@$host:1?security=none&type=tcp#${Uri.encodeComponent(privateLabel)}';
+      expect(
+        () => decodeSubscription(placeholder),
+        throwsA(
+          isA<SubscriptionImportException>()
+              .having(
+                (error) => error.reason,
+                'reason',
+                SubscriptionImportReason.providerPlaceholder,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('private-token')),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('Unknown provider error')),
+              )
+              .having((error) => error.source, 'source', isNull),
+        ),
+      );
+    }
+    expect(
+      decodeSubscription(
+        link.replaceFirst(
+          '#Test',
+          '#${Uri.encodeComponent('Устройство отвязано')}',
+        ),
+      ).single.host,
+      'example.invalid',
+    );
+  });
+
+  test(
+    'HTTP 200 revoked subscription preserves the typed reason and closes the client',
+    () async {
+      final placeholder =
+          'vless://00000000-0000-4000-8000-000000000000@127.0.0.1:1?security=none&type=tcp#${Uri.encodeComponent('Устройство отвязано')}';
+      final client = Client(Response(placeholder));
+      await expectLater(
+        SubscriptionImporter(
+          createClient: () => client,
+        ).load('https://example.invalid/sub/private-token'),
+        throwsA(
+          isA<SubscriptionImportException>()
+              .having(
+                (error) => error.reason,
+                'reason',
+                SubscriptionImportReason.deviceRevoked,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('private-token')),
+              ),
+        ),
+      );
+      expect(client.closed, isTrue);
+    },
+  );
+
   for (final platform in ['android', 'windows', 'linux']) {
     test('$platform sends identity only to the trusted subscription', () async {
       var reads = 0;

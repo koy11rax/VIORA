@@ -58,6 +58,109 @@ Future<GlobalKey<ClientPageState>> mount(
 
 void main() {
   testWidgets(
+    'manual revoked refresh explains existing-device recovery and retains all profiles',
+    (tester) async {
+      final state = savedState();
+      final original = state.profiles
+          .map((profile) => profile.toShareLink())
+          .toList();
+      var saves = 0;
+      state.onChanged = () => saves++;
+      final key = await mount(tester, state, (source) async {
+        if (source == failedSource) {
+          return ImportedConnection(
+            decodeSubscription(
+              'vless://00000000-0000-4000-8000-000000000000@127.0.0.1:1?security=none&type=tcp#${Uri.encodeComponent('Устройство отвязано · arbitrary-private-detail')}',
+            ),
+            source: source,
+          );
+        }
+        throw const FormatException('secret $validSource');
+      });
+      await key.currentState!.refreshSubscriptions();
+      expect(state.profiles.map((profile) => profile.toShareLink()), original);
+      expect(state.selectedProfile, 0);
+      expect(saves, 0);
+      expect(
+        key.currentState!.message,
+        contains('Включи существующее устройство в боте'),
+      );
+      expect(key.currentState!.message, contains('Прежние серверы сохранены'));
+      expect(
+        key.currentState!.message,
+        isNot(contains('arbitrary-private-detail')),
+      );
+      expect(key.currentState!.message, isNot(contains('private-token')));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'partial typed failure retains summary counts and updates the healthy source',
+    (tester) async {
+      final state = savedState();
+      final key = await mount(tester, state, (source) async {
+        if (source == failedSource) {
+          throw const SubscriptionImportException(
+            SubscriptionImportReason.deviceRevoked,
+          );
+        }
+        return ImportedConnection([profile('updated')], source: source);
+      });
+      await key.currentState!.refreshSubscriptions();
+      expect(state.profiles.map((profile) => profile.name), [
+        'old-first',
+        'updated',
+      ]);
+      expect(key.currentState!.message, contains('Обновлено подписок: 1'));
+      expect(key.currentState!.message, contains('Не удалось обновить: 1'));
+      expect(
+        key.currentState!.message,
+        contains('Включи существующее устройство в боте'),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('silent revoked refresh preserves data without notification', (
+    tester,
+  ) async {
+    final state = savedState();
+    final original = state.profiles
+        .map((profile) => profile.toShareLink())
+        .toList();
+    final key = await mount(tester, state, (_) async {
+      throw const SubscriptionImportException(
+        SubscriptionImportReason.deviceRevoked,
+      );
+    });
+    await key.currentState!.refreshSubscriptions(silent: true);
+    await tester.pump();
+    expect(state.profiles.map((profile) => profile.toShareLink()), original);
+    expect(key.currentState!.message, isEmpty);
+    expect(find.byType(SnackBar), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'revoked reason takes priority over a generic provider placeholder',
+    (tester) async {
+      final state = savedState();
+      final key = await mount(tester, state, (source) async {
+        throw SubscriptionImportException(
+          source == failedSource
+              ? SubscriptionImportReason.providerPlaceholder
+              : SubscriptionImportReason.deviceRevoked,
+        );
+      });
+      await key.currentState!.refreshSubscriptions();
+      expect(key.currentState!.message, contains('Это устройство отвязано'));
+      expect(key.currentState!.message, isNot(contains('private-token')));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'a failed first provider does not block later valid subscriptions',
     (tester) async {
       final state = savedState();

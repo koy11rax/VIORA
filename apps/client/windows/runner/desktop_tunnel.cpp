@@ -1,4 +1,5 @@
 #include "desktop_tunnel.h"
+#include "desktop_tunnel_status.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -160,7 +161,7 @@ bool DesktopTunnel::Start(std::string config) {
     SecureZeroMemory(config.data(), config.size()); config.clear();
     if (!written) { session->Fail("ipc_failed"); return; }
     std::string buffer;
-    std::string disconnected;
+    DesktopTunnelStatus status;
     bool stop_sent = false;
     ULONGLONG stopping_at = 0;
     for (;;) {
@@ -178,8 +179,7 @@ bool DesktopTunnel::Start(std::string config) {
         size_t end;
         while ((end = buffer.find('\n')) != std::string::npos) {
           const auto line = buffer.substr(0, end);
-          if (line.find("DISCONNECTED") != std::string::npos) disconnected = line;
-          else session->Emit(line);
+          if (status.Consume(line)) session->Emit(line);
           buffer.erase(0, end + 1);
         }
       }
@@ -188,8 +188,8 @@ bool DesktopTunnel::Start(std::string config) {
     }
     // EOF is only a disconnect when the owner explicitly requested one.
     session->running = false;
-    if (!disconnected.empty()) session->Emit(disconnected);
-    else session->Fail(stop_sent ? "stop_unconfirmed" : "helper_exited");
+    const auto final_status = status.Closed(stop_sent);
+    if (!final_status.empty()) session->Emit(final_status);
   }).detach();
   return true;
 }

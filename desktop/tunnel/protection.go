@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -88,6 +89,30 @@ func proxyMap(config map[string]any) map[string]any {
 }
 
 func resolveProtectedEndpoint(config map[string]any) error {
+	return resolveEndpoint(context.Background(), config, false)
+}
+
+type endpointDependencies struct {
+	doHTTP func(*http.Request) (*http.Response, error)
+	lookup func(context.Context, string, string) ([]net.IP, error)
+}
+
+// Resolve before the core creates its TUN, so endpoint bootstrap cannot start
+// depending on the application's redirected DNS. Protected sessions never use
+// the system resolver; the ordinary Windows mode may use it within the same
+// deadline if the fixed HTTPS bootstrap is unavailable.
+func resolveEndpoint(parent context.Context, config map[string]any, allowSystem bool) error {
+	dialer := &net.Dialer{Timeout: 8 * time.Second, Control: bootstrapSocket}
+	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext, ForceAttemptHTTP2: true}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect forbidden") }}
+	return resolveEndpointWith(parent, config, allowSystem, endpointDependencies{
+		doHTTP: client.Do,
+		lookup: net.DefaultResolver.LookupIP,
+	})
+}
+
+func resolveEndpointWith(parent context.Context, config map[string]any, allowSystem bool, dependencies endpointDependencies) error {
 	outbound := proxyMap(config)
 	server := outbound["settings"].(map[string]any)["vnext"].([]any)[0].(map[string]any)
 	host := server["address"].(string)
@@ -97,60 +122,117 @@ func resolveProtectedEndpoint(config map[string]any) error {
 		}
 		return nil
 	}
-	dialer := &net.Dialer{Timeout: 8 * time.Second, Control: bootstrapSocket}
-	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext, ForceAttemptHTTP2: true}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect forbidden") }}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
+	// Leave at most two seconds for the ordinary-mode fallback, without ever
+	// granting the two stages independent ten-second budgets.
+	dohContext := ctx
+	cancelDoH := func() {}
+	if allowSystem {
+		dohContext, cancelDoH = context.WithTimeout(ctx, 8*time.Second)
+	}
+	ip, err := lookupEndpointDoH(dohContext, host, dependencies.doHTTP)
+	cancelDoH()
+	if err != nil && allowSystem && ctx.Err() == nil {
+		ips, lookupErr := dependencies.lookup(ctx, "ip4", host)
+		if lookupErr == nil {
+			for _, candidate := range ips {
+				if value := candidate.To4(); value != nil {
+					ip, err = value, nil
+					break
+				}
+			}
+		}
+	}
+	if err != nil || ctx.Err() != nil {
+		return errors.New("endpoint IPv4 resolution failed")
+	}
+	preserveEndpointHost(outbound, host)
+	server["address"] = ip.String()
+	return nil
+}
+
+func lookupEndpointDoH(ctx context.Context, host string, doHTTP func(*http.Request) (*http.Response, error)) (net.IP, error) {
 	request, err := http.NewRequestWithContext(ctx, "GET", "https://1.1.1.1/dns-query?type=A&name="+url.QueryEscape(host), nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	request.Header.Set("Accept", "application/dns-json")
-	reply, err := client.Do(request)
+	reply, err := doHTTP(request)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if reply == nil || reply.Body == nil {
+		return nil, errors.New("invalid DNS response")
 	}
 	defer reply.Body.Close()
 	if reply.StatusCode != 200 {
-		return errors.New("bootstrap failed")
+		return nil, errors.New("bootstrap failed")
+	}
+	// Read one extra byte to reject oversized bodies even when a valid JSON
+	// prefix fits within the limit. Unmarshal also refuses trailing documents.
+	body, err := io.ReadAll(io.LimitReader(reply.Body, 32769))
+	if err != nil || len(body) > 32768 {
+		return nil, errors.New("invalid DNS response")
 	}
 	var record struct {
-		Status int
+		Status *int
 		Answer []struct {
 			Type int
 			Data string
 		}
 	}
-	if json.NewDecoder(io.LimitReader(reply.Body, 32768)).Decode(&record) != nil || record.Status != 0 {
-		return errors.New("invalid DNS response")
+	if json.Unmarshal(body, &record) != nil || record.Status == nil || *record.Status != 0 {
+		return nil, errors.New("invalid DNS response")
 	}
 	for _, answer := range record.Answer {
 		if answer.Type == 1 {
 			if ip := net.ParseIP(answer.Data).To4(); ip != nil {
-				server["address"] = ip.String()
-				stream := outbound["streamSettings"].(map[string]any)
-				if ws, ok := stream["wsSettings"].(map[string]any); ok {
-					headers, ok := ws["headers"].(map[string]any)
-					if !ok {
-						headers = map[string]any{}
-						ws["headers"] = headers
-					}
-					if _, exists := headers["Host"]; !exists {
-						headers["Host"] = host
-					}
-				}
-				if xhttp, ok := stream["xhttpSettings"].(map[string]any); ok {
-					if value, _ := xhttp["host"].(string); value == "" {
-						xhttp["host"] = host
-					}
-				}
-				return nil
+				return ip, nil
 			}
 		}
 	}
-	return errors.New("no endpoint IPv4")
+	return nil, errors.New("no endpoint IPv4")
+}
+
+func preserveEndpointHost(outbound map[string]any, original string) {
+	stream := outbound["streamSettings"].(map[string]any)
+	host := original
+	securityField := "tlsSettings"
+	if stream["security"] == "reality" {
+		securityField = "realitySettings"
+	}
+	if settings, ok := stream[securityField].(map[string]any); ok {
+		if name, _ := settings["serverName"].(string); name != "" {
+			host = name
+		}
+	}
+	if ws, ok := stream["wsSettings"].(map[string]any); ok {
+		headers, ok := ws["headers"].(map[string]any)
+		if !ok {
+			headers = map[string]any{}
+			ws["headers"] = headers
+		}
+		hostKey := "Host"
+		explicitHost := false
+		for name, value := range headers {
+			if strings.EqualFold(name, "Host") {
+				hostKey = name
+				if text, _ := value.(string); text != "" {
+					explicitHost = true
+					break
+				}
+			}
+		}
+		if !explicitHost {
+			headers[hostKey] = host
+		}
+	}
+	if xhttp, ok := stream["xhttpSettings"].(map[string]any); ok {
+		if value, _ := xhttp["host"].(string); value == "" {
+			xhttp["host"] = host
+		}
+	}
 }
 
 func protectionCLI() bool {

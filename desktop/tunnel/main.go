@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -53,9 +53,15 @@ func run(input io.ReadCloser, output io.Writer) {
 
 func runWithProtection(input io.ReadCloser, output io.Writer, protection func(string) (bool, error)) {
 	defer input.Close()
+	diagnostics := newSessionDiagnostics(time.Now())
+	defer func() { writeSessionDiagnostics(diagnostics.snapshot(time.Now())) }()
 	encoder := json.NewEncoder(output)
 	protected := false
-	emit := func(s status) { s.Lockdown = protected; _ = encoder.Encode(s) }
+	emit := func(s status) {
+		diagnostics.setStatus(s.State, s.Code)
+		s.Lockdown = protected
+		_ = encoder.Encode(s)
+	}
 	fail := func(code string) { emit(status{State: "FAILED", Code: code}) }
 	reader := bufio.NewReaderSize(input, 128*1024)
 	line, err := reader.ReadSlice('\n')
@@ -71,6 +77,28 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 	clear(line)
 	if err != nil {
 		fail("invalid_config")
+		return
+	}
+	bootstrapContext, cancelBootstrap := context.WithCancel(context.Background())
+	defer cancelBootstrap()
+	stop := make(chan struct{})
+	go func() {
+		// After the validated profile, any further input or EOF cancels startup
+		// as well as an active session. One producer owns this channel.
+		_, _ = reader.ReadSlice('\n')
+		close(stop)
+		cancelBootstrap()
+	}()
+	cancelled := func() bool {
+		select {
+		case <-stop:
+			emit(status{State: "DISCONNECTED"})
+			return true
+		default:
+			return false
+		}
+	}
+	if cancelled() {
 		return
 	}
 	exe, err := os.Executable()
@@ -110,10 +138,19 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 	}
 	if protected {
 		restrictDirect(config)
-		if resolveProtectedEndpoint(config) != nil {
-			fail("endpoint_dns_failed")
+	}
+	if cancelled() {
+		return
+	}
+	if prepareEndpoint(bootstrapContext, config, protected) != nil {
+		if cancelled() {
 			return
 		}
+		fail("endpoint_dns_failed")
+		return
+	}
+	if cancelled() {
+		return
 	}
 	port, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -133,9 +170,16 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 		fail("start_failed")
 		return
 	}
+	defer logs.Close()
+	if writer, ok := cmd.Stdout.(io.Closer); ok {
+		defer writer.Close()
+	}
 	cmd.Stderr = cmd.Stdout
 	if err = configureChild(cmd); err != nil {
 		fail("start_failed")
+		return
+	}
+	if cancelled() {
 		return
 	}
 	if err = cmd.Start(); err != nil {
@@ -153,26 +197,17 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	started := make(chan struct{}, 1)
+	logsDone := make(chan struct{})
 	go func() {
-		scan := bufio.NewScanner(logs)
-		scan.Buffer(make([]byte, 4096), 128*1024)
-		for scan.Scan() {
-			if strings.Contains(scan.Text(), "started") && strings.Contains(scan.Text(), "Xray") {
-				select {
-				case started <- struct{}{}:
-				default:
-				}
-			}
-		}
+		defer close(logsDone)
+		captureCoreDiagnostics(logs, diagnostics, started)
 	}()
-	stop := make(chan struct{}, 1)
-	go func() {
-		// EOF, UI crash, pipe loss and explicit disconnect all stop the privileged child.
-		// A local pipe client must not grow a privileged service buffer without
-		// bound by streaming an unterminated stop command. Any input or EOF is
-		// sufficient to end this session; the command is not a general RPC API.
-		_, _ = reader.ReadSlice('\n')
-		stop <- struct{}{}
+	defer func() {
+		select {
+		case <-logsDone:
+		case <-time.After(time.Second):
+			diagnostics.record(diagLogReadError)
+		}
 	}()
 	interrupt := func() {
 		interruptChild(cmd)
