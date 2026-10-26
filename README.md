@@ -6,17 +6,23 @@ VPN-клиент для Android, Windows и Linux. Графитовый инте
 ## Скачать
 
 - [Android APK 1.0.2](https://github.com/koy11rax/VIORA/releases/download/v1.0.2/Viora-Android-1.0.2-release.apk)
-- [Windows: установщик EXE](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Windows-1.0.0-Setup.exe)
+- [Windows: установщик EXE 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5/Viora-Windows-1.0.5-Setup.exe)
 - [Debian / Ubuntu: DEB](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-amd64.deb)
 - [Fedora: RPM](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-1.x86_64.rpm)
 - [Arch: пакет pacman](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/viora-bin-1.0.0-1-x86_64.pkg.tar.zst)
 - [Android: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.2)
-- [Windows/Linux: все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
+- [Windows 1.0.5: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.5)
+- [Linux: все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
 
 Android 1.0.2 исправляет восстановление соединения, применение обновлённой
 подписки и сохранение выбранного способа подключения. Проверка пинга отдельно
 показывает ответ HTTPS через активный VPN: [изменения и проверки](docs/android-release-1.0.2.md).
-Плитка быстрых настроек сохранена. Windows/Linux — версия 1.0.0.
+Плитка быстрых настроек сохранена. Linux — версия 1.0.0.
+
+Windows 1.0.5 заменяет Xray TUN отдельным модулем sing-box и сохраняет Xray
+для связи с VPN-сервером. Исправлены запуск службы и упаковка драйвера,
+добавлен контроль запуска/остановки обоих компонентов. Владелец подтвердил
+работу на своём ПК: [изменения и проверки](docs/windows-connectivity-1.0.5.md).
 
 Закрой предыдущую версию перед обновлением Windows. Установщик сохраняет
 настройки и позволяет выбрать папку интерфейса; служба VPN устанавливается
@@ -57,6 +63,7 @@ Linux-пакеты Fedora/Arch используют общий бинарник,
 
 Результаты проверки и непроверенные сценарии:
 [Android 1.0.2](docs/android-release-1.0.2.md),
+[Windows 1.0.5](docs/windows-connectivity-1.0.5.md),
 [Windows/Linux 1.0.0](docs/release-1.0.0.md).
 Предыдущий подробный аудит: [отчёт](docs/security-audit-2026-10-22.md).
 Успешные проверки не являются доказательством отсутствия всех уязвимостей или утечек.
@@ -83,5 +90,6 @@ desktop-служба — Go, фильтры Windows — C++/WFP, серверн�
 токены, пароли, реквизиты или персональные списки устройств.
 Лицензии сторонних компонентов сохранены в assets/licenses и third_party.
 AndroidLibXrayLite — LGPL-3.0, Xray — MPL-2.0, flutter_v2ray_client — MIT,
+sing-box — GPL-3.0 ([происхождение и исходники](third_party/sing-box/PROVENANCE.md)),
 Flutter — BSD-3-Clause. Отдельная лицензия собственного кода VIORA не назначена;
 публикация исходников сама по себе не заменяет её.

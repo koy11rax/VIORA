@@ -14,13 +14,23 @@
 - Исходники: https://codeload.github.com/SagerNet/sing-box/zip/refs/tags/v1.14.4
 - SHA-256 сохранённого архива исходников:
   `9037718f85b67a004517c6a9190b98c68483de643f57c62eb6c889e01beae4bc`.
-- Лицензия upstream: GNU GPL v3, полный текст сохранён в
-  `apps/client/assets/licenses/sing-box-GPL-3.0.txt`.
+- Лицензия upstream: GNU GPL v3. Уведомление upstream сохранено без изменений в
+  `apps/client/assets/licenses/sing-box-GPL-3.0.txt`; полный текст лицензии — в
+  `third_party/sing-box/COPYING`, полученный с
+  https://www.gnu.org/licenses/gpl-3.0.txt .
 
 Для сборки распакуйте Windows-архив в `toolchains/sing-box`, сохранив каталог
 `sing-box-1.14.4-windows-amd64`. Сохраните архив исходников как
 `toolchains/sing-box/sing-box-v1.14.4-source.zip`. Сборка и упаковка проверяют
 закреплённые хеши. Движок не обновляется из приложения автоматически.
+
+Проверенные установщики VIORA Windows 1.0.5 не пересобираются ради этого
+уточнения лицензии. Они уже содержат полный `GPL-3.0.txt`, уведомление
+`sing-box-GPL-3.0.txt` и архив исходников sing-box. Дополнительно полный текст
+GPL прилагается к выпуску отдельным файлом `COPYING-sing-box-GPL-3.0.txt`, а
+`third_party/sing-box/COPYING` входит в публикуемый архив исходников VIORA.
+При следующих сборках упаковщик также копирует этот файл в папку `licenses`
+под именем `COPYING-sing-box-GPL-3.0.txt`.
 
 Документация схемы: https://sing-box.sagernet.org/configuration/inbound/tun/ ,
 https://sing-box.sagernet.org/configuration/outbound/socks/ .

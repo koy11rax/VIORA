@@ -14,10 +14,12 @@ foreach ($file in @('viora_client.exe','flutter_windows.dll','data')) {
 $vioraFrontend = Join-Path $vioraRoot 'artifacts\desktop-core\windows\sing-box.exe'
 $vioraFrontendHash = '8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9'
 $vioraFrontendLicense = Join-Path $vioraRoot 'apps\client\assets\licenses\sing-box-GPL-3.0.txt'
+$vioraFrontendCopying = Join-Path $vioraRoot 'third_party\sing-box\COPYING'
 if (!(Test-Path -LiteralPath $vioraFrontend -PathType Leaf) -or (Get-FileHash -LiteralPath $vioraFrontend).Hash.ToLowerInvariant() -ne $vioraFrontendHash) {
     throw 'Missing or modified official sing-box 1.14.4 frontend; rebuild the trusted Windows core bundle'
 }
 if (!(Test-Path -LiteralPath $vioraFrontendLicense -PathType Leaf)) { throw 'Missing sing-box GPL license notice' }
+if (!(Test-Path -LiteralPath $vioraFrontendCopying -PathType Leaf)) { throw 'Missing full sing-box GPL license text' }
 New-Item -ItemType Directory -Path $vioraOutput | Out-Null
 Copy-Item -LiteralPath (Join-Path $vioraBundle 'viora_client.exe') -Destination (Join-Path $vioraOutput 'Viora.exe')
 Get-ChildItem -LiteralPath $vioraBundle -Filter '*.dll' -File | Copy-Item -Destination $vioraOutput
@@ -41,6 +43,7 @@ New-Item -ItemType Directory -Path $vioraLicenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\xray-main\Xray-core-701af60772cda123492f86e383e1fdba066614a9\LICENSE') -Destination (Join-Path $vioraLicenses 'Xray-MPL-2.0.txt')
 Copy-Item -LiteralPath (Join-Path $vioraRoot 'toolchains\wintun\wintun\LICENSE.txt') -Destination (Join-Path $vioraLicenses 'Wintun-LICENSE.txt')
 Copy-Item -LiteralPath $vioraFrontendLicense -Destination (Join-Path $vioraLicenses 'sing-box-GPL-3.0.txt')
+Copy-Item -LiteralPath $vioraFrontendCopying -Destination (Join-Path $vioraLicenses 'COPYING-sing-box-GPL-3.0.txt')
 $vioraFrontendSource=Join-Path $vioraRoot 'toolchains\sing-box\sing-box-v1.14.4-source.zip'
 if ((Get-FileHash -LiteralPath $vioraFrontendSource).Hash.ToLowerInvariant() -ne '9037718f85b67a004517c6a9190b98c68483de643f57c62eb6c889e01beae4bc') { throw 'Expected pinned sing-box source archive' }
 Copy-Item -LiteralPath $vioraFrontendSource -Destination (Join-Path $vioraLicenses 'sing-box-1.14.4-source.zip')
