@@ -22,6 +22,15 @@ class _Engine implements TunnelEngine {
   Future<void> stop() async {}
 }
 
+class _Controller extends TunnelController {
+  _Controller() : super(_Engine());
+
+  void reportPhase(TunnelPhase value) {
+    phase = value;
+    notifyListeners();
+  }
+}
+
 Future<(ClientState, GlobalKey<ClientPageState>)> _mount(
   WidgetTester tester, {
   Future<int?> Function()? probe,
@@ -32,7 +41,7 @@ Future<(ClientState, GlobalKey<ClientPageState>)> _mount(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  final tunnel = TunnelController(_Engine())..phase = phase;
+  final tunnel = _Controller()..phase = phase;
   final state = ClientState(tunnel: tunnel);
   addTearDown(tunnel.dispose);
   addTearDown(state.account.dispose);
@@ -70,20 +79,25 @@ Future<(ClientState, GlobalKey<ClientPageState>)> _mount(
 
 void main() {
   testWidgets(
-    'active connection reports port reachability and core response separately',
+    'active connection skips local TCP timing and reports only HTTPS response',
     (tester) async {
-      var probes = 0;
+      var probes = 0, tcpCalls = 0;
       final (state, key) = await _mount(
         tester,
         probe: () async {
           probes++;
           return 234;
         },
+        tcp: (_, _) async {
+          tcpCalls++;
+          return 6;
+        },
       );
       await key.currentState!.checkLatency();
       expect(probes, 1);
-      expect(state.latency[state.profiles[0].toShareLink()], 71);
-      expect(key.currentState!.message, contains('TCP-порт доступен: 71 мс'));
+      expect(tcpCalls, 0);
+      expect(state.latency[state.profiles[0].toShareLink()], isNull);
+      expect(key.currentState!.message, isNot(contains('TCP-порт доступен')));
       expect(
         key.currentState!.message,
         contains('через VPN ответил за 234 мс'),
@@ -95,7 +109,7 @@ void main() {
 
   for (final throwsError in [false, true]) {
     testWidgets(
-      'unconfirmed core response keeps TCP result and avoids general outage claim ($throwsError)',
+      'unconfirmed core response never claims TCP reachability ($throwsError)',
       (tester) async {
         final (state, key) = await _mount(
           tester,
@@ -105,18 +119,17 @@ void main() {
           },
         );
         await key.currentState!.checkLatency();
-        expect(state.latency[state.profiles[0].toShareLink()], 71);
+        expect(state.latency[state.profiles[0].toShareLink()], isNull);
         expect(
           key.currentState!.message,
-          contains(
-            'TCP-порт доступен, но нет ответа тестового сайта через VPN',
-          ),
+          contains('Нет ответа тестового сайта через VPN'),
         );
         expect(
           key.currentState!.message,
           contains('может быть недоступен отдельно'),
         );
         expect(key.currentState!.message, isNot(contains('Native detail')));
+        expect(key.currentState!.message, isNot(contains('TCP-порт доступен')));
         expect(
           key.currentState!.message,
           isNot(contains('TCP-порт сервера не ответил')),
@@ -130,7 +143,7 @@ void main() {
     'disconnected VPN tests TCP only and never invokes the core probe',
     (tester) async {
       var probes = 0;
-      final (_, key) = await _mount(
+      final (state, key) = await _mount(
         tester,
         phase: TunnelPhase.disconnected,
         probe: () async {
@@ -140,14 +153,39 @@ void main() {
       );
       await key.currentState!.checkLatency();
       expect(probes, 0);
+      expect(state.latency[state.profiles[0].toShareLink()], 71);
       expect(
         key.currentState!.message,
-        contains('не подтверждает передачу данных через VPN'),
+        contains('TCP-соединение установлено за 71 мс'),
+      );
+      expect(
+        key.currentState!.message,
+        contains('не подтверждает ответ удалённого сервера'),
       );
       expect(key.currentState!.message, isNot(contains('текущий маршрут')));
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('active desktop skips TCP without inventing port availability', (
+    tester,
+  ) async {
+    var tcpCalls = 0;
+    final (state, key) = await _mount(
+      tester,
+      tcp: (_, _) async {
+        tcpCalls++;
+        return 6;
+      },
+    );
+    await key.currentState!.checkLatency();
+    expect(tcpCalls, 0);
+    expect(state.latency, isEmpty);
+    expect(key.currentState!.message, contains('не измеряет задержку'));
+    expect(key.currentState!.message, isNot(contains('6 мс')));
+    expect(key.currentState!.message, isNot(contains('TCP-порт доступен')));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('busy VPN rejects measurement before any network work', (
     tester,
@@ -179,6 +217,7 @@ void main() {
     var probes = 0;
     final (state, key) = await _mount(
       tester,
+      phase: TunnelPhase.disconnected,
       tcp: (_, _) => tcp.future,
       probe: () async {
         probes++;
@@ -191,7 +230,81 @@ void main() {
     await pending;
     expect(probes, 0);
     expect(key.currentState!.message, isEmpty);
-    expect(state.latency[state.profiles[0].toShareLink()], 71);
+    expect(state.latency[state.profiles[0].toShareLink()], isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('VPN starting during TCP discards the timing and late notice', (
+    tester,
+  ) async {
+    final tcp = Completer<int>();
+    var probes = 0;
+    final (state, key) = await _mount(
+      tester,
+      phase: TunnelPhase.disconnected,
+      tcp: (_, _) => tcp.future,
+      probe: () async {
+        probes++;
+        return 50;
+      },
+    );
+    final pending = key.currentState!.checkLatency();
+    state.tunnel.phase = TunnelPhase.active;
+    tcp.complete(6);
+    await pending;
+    expect(state.latency, isEmpty);
+    expect(probes, 0);
+    expect(key.currentState!.message, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('off-active-off during TCP cannot cache a local ACK as delay', (
+    tester,
+  ) async {
+    final tcp = Completer<int>();
+    final (state, key) = await _mount(
+      tester,
+      phase: TunnelPhase.disconnected,
+      tcp: (_, _) => tcp.future,
+    );
+    final pending = key.currentState!.checkLatency();
+    final tunnel = state.tunnel as _Controller;
+    tunnel.reportPhase(TunnelPhase.active);
+    tunnel.reportPhase(TunnelPhase.disconnected);
+    tcp.complete(6);
+    await pending;
+    expect(state.latency, isEmpty);
+    expect(key.currentState!.message, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'reconnected same profile cannot receive the prior HTTPS result',
+    (tester) async {
+      final reply = Completer<int?>();
+      final (state, key) = await _mount(tester, probe: () => reply.future);
+      final pending = key.currentState!.checkLatency();
+      final tunnel = state.tunnel as _Controller;
+      tunnel.reportPhase(TunnelPhase.stopping);
+      tunnel.reportPhase(TunnelPhase.active);
+      reply.complete(234);
+      await pending;
+      expect(key.currentState!.message, isEmpty);
+      expect(state.latency, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('unchanged active statistics do not cancel an HTTPS response', (
+    tester,
+  ) async {
+    final reply = Completer<int?>();
+    final (state, key) = await _mount(tester, probe: () => reply.future);
+    final pending = key.currentState!.checkLatency();
+    (state.tunnel as _Controller).reportPhase(TunnelPhase.active);
+    reply.complete(234);
+    await pending;
+    expect(key.currentState!.message, contains('через VPN ответил за 234 мс'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -254,6 +367,7 @@ void main() {
     var probes = 0;
     final (_, key) = await _mount(
       tester,
+      phase: TunnelPhase.disconnected,
       tcp: (_, _) async {
         throw StateError('TCP fixture failure');
       },

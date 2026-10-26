@@ -66,6 +66,9 @@ class DesktopXrayEngine implements TunnelEngine, DisposableTunnelEngine {
           'core_start_timeout',
           'tun_not_ready',
           'start_failed',
+          'network_changed',
+          'backend_exited',
+          'frontend_exited',
         }.contains(code)) {
       return false;
     }
@@ -506,6 +509,10 @@ class TunnelController extends ChangeNotifier {
           'Другая операция VPN ещё выполняется. Дождись остановки и повтори.',
         'endpoint_dns_failed' =>
           'Не удалось получить адрес VPN-сервера. Постоянная защита остаётся включённой.',
+        'network_changed' =>
+          'Сетевое подключение изменилось или пропало. Проверь интернет и подключи VPN снова.',
+        'outbound_interface_unavailable' =>
+          'Не найдено доступное сетевое подключение для VPN. Подключись к Wi-Fi или кабельной сети и повтори.',
         'lockdown_required' =>
           'Для строгой защиты включи в настройках Android «Постоянный VPN» и «Блокировать соединения без VPN» для VIORA.',
         'restart_state_failed' =>
@@ -518,10 +525,20 @@ class TunnelController extends ChangeNotifier {
           'Служба VIORA не запущена. Установи новую версию через установщик и перезапусти приложение.',
         'core_integrity' || 'helper_missing' =>
           'Установи Viora через установщик: VPN-компонент отсутствует или повреждён.',
+        'frontend_integrity' =>
+          'Сетевой компонент VPN отсутствует или повреждён. Переустанови VIORA через установщик и повтори подключение.',
+        'bridge_config_failed' =>
+          'Не удалось подготовить конфигурацию VPN. Проверь выбранный сервер и повтори подключение.',
         'app_rules_unsupported' =>
           'Выбери программы заново в разделе «Приложения»: на ПК нужны пути исполняемых файлов, а не Android-пакеты.',
         'core_start_timeout' || 'helper_timeout' =>
           'VPN не запустился вовремя. Проверь системный запрос и повтори подключение.',
+        'backend_start_failed' || 'backend_not_ready' =>
+          'Не удалось запустить VPN-движок. Повтори подключение; если ошибка повторится, переустанови VIORA.',
+        'frontend_start_failed' || 'frontend_not_ready' =>
+          'Не удалось подготовить сетевой адаптер VPN. Повтори подключение или переустанови VIORA.',
+        'backend_exited' || 'frontend_exited' =>
+          'VPN-компонент неожиданно остановился. Подключись снова.',
         _ => 'VPN-компонент остановился. Проверь подключение и повтори запуск.',
       };
       _change(TunnelPhase.failed);

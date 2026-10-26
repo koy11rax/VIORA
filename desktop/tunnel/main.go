@@ -17,10 +17,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
-var coreSHA, driverSHA string // pinned at build time, never supplied by the client
+var coreSHA, driverSHA, frontendSHA string // pinned at build time, never supplied by the client
 
 type status struct {
 	State    string `json:"state"`
@@ -56,8 +57,11 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 	diagnostics := newSessionDiagnostics(time.Now())
 	defer func() { writeSessionDiagnostics(diagnostics.snapshot(time.Now())) }()
 	encoder := json.NewEncoder(output)
+	var emitMutex sync.Mutex
 	protected := false
 	emit := func(s status) {
+		emitMutex.Lock()
+		defer emitMutex.Unlock()
 		diagnostics.setStatus(s.State, s.Code)
 		s.Lockdown = protected
 		_ = encoder.Encode(s)
@@ -150,6 +154,9 @@ func runWithProtection(input io.ReadCloser, output io.Writer, protection func(st
 		return
 	}
 	if cancelled() {
+		return
+	}
+	if runPlatformBridge(bootstrapContext, config, directory, protected, emit, diagnostics) {
 		return
 	}
 	port, err := net.Listen("tcp4", "127.0.0.1:0")

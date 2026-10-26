@@ -16,7 +16,23 @@ toolchains/xray-main, сохранив исходное имя каталога 
 Официальный Wintun 0.14.1 поставляется отдельным архивом с лицензией:
 распакуй toolchains/wintun-0.14.1.zip в toolchains/wintun.
 
+Последующие настольные сборки применяют проверяемый Go overlay
+`patches/xray-desktop/websocket_dialer.go`: он передаёт контекст таймаута
+WebSocket в TCP/uTLS и закрывает поток после ошибки TLS. Базовый commit и
+проверка сертификатов сохраняются; каталог upstream не изменяется.
+Второй overlay, `patches/xray-desktop/tls_sniff.go`, сохраняет распознавание SNI
+при частично полученной записи ClientHello. Предел ожидания не расширяется.
+SHA-256 исходного файла проверяется перед сборкой. Автономная проверка и
+необязательное воспроизведение старой ошибки описаны в
+`tests/xray-websocket/README.md`. Android этим overlay не затрагивается.
+
 ## Windows
+
+Для последующей Windows 1.0.5 дополнительно требуется официальный sing-box
+1.14.4 (внешний TUN-компонент). Пути загрузки, распаковки и закреплённые SHA-256
+приведены в `third_party/sing-box/PROVENANCE.md`. В этих сборках Xray не создаёт
+TUN на Windows. Для текущей версии используйте номер 1.0.5 / build 35 вместо
+исторического номера 1.0.0 / 28 в примере ниже.
 
 1. В apps/client выполни flutter pub get, flutter analyze --no-pub.
 2. Собери ядро/помощник скриптом scripts/build-desktop-core.ps1 с параметрами

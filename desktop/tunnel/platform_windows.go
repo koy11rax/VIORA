@@ -37,15 +37,16 @@ func applySystemProtection(settings map[string]any) {
 type installTrustReason string
 
 const (
-	installTrustOK                installTrustReason = ""
-	installTrustExecutable        installTrustReason = "executable"
-	installTrustKnownFolder       installTrustReason = "knownfolder"
-	installTrustDirectoryMismatch installTrustReason = "directorymismatch"
-	installTrustEngineAttributes  installTrustReason = "engineattrs"
-	installTrustCoreAttributes    installTrustReason = "coreattrs"
-	installTrustXrayAttributes    installTrustReason = "xrayattrs"
-	installTrustDriverAttributes  installTrustReason = "driverattrs"
-	installTrustReparse           installTrustReason = "reparse"
+	installTrustOK                 installTrustReason = ""
+	installTrustExecutable         installTrustReason = "executable"
+	installTrustKnownFolder        installTrustReason = "knownfolder"
+	installTrustDirectoryMismatch  installTrustReason = "directorymismatch"
+	installTrustEngineAttributes   installTrustReason = "engineattrs"
+	installTrustCoreAttributes     installTrustReason = "coreattrs"
+	installTrustXrayAttributes     installTrustReason = "xrayattrs"
+	installTrustDriverAttributes   installTrustReason = "driverattrs"
+	installTrustReparse            installTrustReason = "reparse"
+	installTrustFrontendAttributes installTrustReason = "frontendattrs"
 )
 
 // Reasons are fixed diagnostic identifiers, never OS error text or paths.
@@ -53,7 +54,7 @@ func (reason installTrustReason) Error() string {
 	switch reason {
 	case installTrustExecutable, installTrustKnownFolder, installTrustDirectoryMismatch,
 		installTrustEngineAttributes, installTrustCoreAttributes, installTrustXrayAttributes,
-		installTrustDriverAttributes, installTrustReparse:
+		installTrustDriverAttributes, installTrustReparse, installTrustFrontendAttributes:
 		return string(reason)
 	default:
 		return "unknown"
@@ -92,6 +93,7 @@ func trustedInstallFailureWith(directory string, knownRoot func() (string, error
 		{filepath.Join(directory, "core"), installTrustCoreAttributes},
 		{filepath.Join(directory, "core", "xray.exe"), installTrustXrayAttributes},
 		{filepath.Join(directory, "core", "wintun.dll"), installTrustDriverAttributes},
+		{frontendPath(directory), installTrustFrontendAttributes},
 	} {
 		attrs, err := attributes(item.path)
 		if err != nil {
@@ -99,6 +101,9 @@ func trustedInstallFailureWith(directory string, knownRoot func() (string, error
 		}
 		if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 			return installTrustReparse
+		}
+		if item.reason == installTrustFrontendAttributes && attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+			return installTrustFrontendAttributes
 		}
 	}
 	return installTrustOK

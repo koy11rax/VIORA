@@ -253,7 +253,7 @@ class ApprovedContent extends StatelessWidget {
         state.tunnel.stats.lockdown || state.protectionStatus == 'on';
     final selected = state.selectedProfile;
     final latency = selected >= 0 && selected < state.profiles.length
-        ? state.latency[state.profiles[selected].toShareLink()]
+        ? state.tcpConnectTime(state.profiles[selected])
         : null;
     String bytes(int value) => value >= 1073741824
         ? '${(value / 1073741824).toStringAsFixed(1)} ГБ'
@@ -548,10 +548,9 @@ class ApprovedContent extends StatelessWidget {
                       style: TextStyle(fontSize: 11, color: c.muted),
                     ),
                   ),
-                  trailing:
-                      state.latency[state.profiles[i].toShareLink()] != null
+                  trailing: state.tcpConnectTime(state.profiles[i]) != null
                       ? Text(
-                          '${state.latency[state.profiles[i].toShareLink()]} мс',
+                          'TCP · ${state.tcpConnectTime(state.profiles[i])} мс',
                           style: TextStyle(fontSize: 12, color: c.muted),
                         )
                       : const Icon(Icons.chevron_right, size: 18),
@@ -801,7 +800,7 @@ class ApprovedContent extends StatelessWidget {
                     if (latency != null) ...[
                       gap(6),
                       Text(
-                        '$latency мс',
+                        'TCP · $latency мс',
                         style: TextStyle(fontSize: 12, color: c.muted),
                       ),
                     ],
@@ -833,7 +832,7 @@ class ApprovedContent extends StatelessWidget {
         onChanged();
       }
     },
-    latency: state.latency[state.profiles[i].toShareLink()],
+    latency: state.tcpConnectTime(state.profiles[i]),
   );
 
   Widget servers(BuildContext context) => Column(

@@ -47,6 +47,8 @@ func TestSessionDiagnosticsFixedVocabularyAndRedaction(t *testing.T) {
 		"route_error": 1, "tun_error": 1, "core_error": 3, "log_read_error": 0, "unclassified": 1,
 		"timeout_error": 0, "certificate_error": 1, "connection_refused": 0,
 		"connection_reset": 0, "transport_http_rejected": 0,
+		"dial_attempt": 1, "outbound_established": 0, "target_forward": 0,
+		"ws_dial_error": 1, "ws_close": 0,
 	}
 	if len(report.Counts) != len(want) {
 		t.Fatal("diagnostic vocabulary changed or grew from raw input")
@@ -65,6 +67,9 @@ func TestSessionDiagnosticsFixedVocabularyAndRedaction(t *testing.T) {
 	if len(encoded) > maxDiagnosticReportBytes {
 		t.Fatal("diagnostic report exceeded its storage bound")
 	}
+	if len(report.SocketCodes) != len(diagnosticSocketCodes) {
+		t.Fatal("socket code vocabulary is not fixed")
+	}
 }
 
 func TestSessionDiagnosticsCountersStayBoundedAndSnapshotsAreDetached(t *testing.T) {
@@ -78,9 +83,13 @@ func TestSessionDiagnosticsCountersStayBoundedAndSnapshotsAreDetached(t *testing
 	}
 	report.Counts["dns_error"] = 0
 	report.Counts["untrusted-key"] = 100
+	report.SocketCodes[99999] = 100
 	next := d.snapshot(time.Unix(2, 0))
 	if next.Counts["dns_error"] != diagnosticLimit || len(next.Counts) != int(diagnosticClassCount) {
 		t.Fatal("a report mutation changed the live diagnostics")
+	}
+	if len(next.SocketCodes) != len(diagnosticSocketCodes) || next.SocketCodes[99999] != 0 {
+		t.Fatal("a socket-code report mutation changed the live diagnostics")
 	}
 }
 
@@ -181,5 +190,74 @@ func TestSessionDiagnosticsConfigUsesInfoWithoutAccessOrDNSQueryLogs(t *testing.
 	log, ok := config["log"].(map[string]any)
 	if !ok || len(log) != 3 || log["loglevel"] != "info" || log["access"] != "none" || log["dnsLog"] != false {
 		t.Fatal("diagnostic build must explicitly disable access/query logs")
+	}
+}
+
+func TestSessionDiagnosticsWarningCallerDoesNotInventFailure(t *testing.T) {
+	d := newSessionDiagnostics(time.Unix(0, 0))
+	d.observe("2026/10/25 16:00:00.123456 [Warning] common/errors: The feature WebSocket transport is deprecated. Please migrate to XHTTP.")
+	d.observe("2026/10/25 16:00:00.123457 [Info] [123] transport/internet/websocket: creating connection to tcp:error.example.invalid:443")
+	report := d.snapshot(time.Unix(1, 0))
+	if report.Counts["core_error"] != 0 || report.Counts["websocket_error"] != 0 {
+		t.Fatal("a caller name or successful phase containing error became a transport failure")
+	}
+	if report.Counts["dial_attempt"] != 1 {
+		t.Fatal("real dial attempt was not retained separately")
+	}
+}
+
+func TestSessionDiagnosticsSeparatesDialForwardAndEstablishment(t *testing.T) {
+	d := newSessionDiagnostics(time.Unix(0, 0))
+	d.observe("[Info] transport/internet/websocket: creating connection to tcp:192.0.2.1:443")
+	d.observe("[Info] proxy/vless/outbound: tunneling request to tcp:198.51.100.1:443 via 192.0.2.1:443")
+	report := d.snapshot(time.Unix(1, 0))
+	if report.Counts["dial_attempt"] != 1 || report.Counts["target_forward"] != 1 || report.Counts["outbound_established"] != 0 {
+		t.Fatal("dial/target phases imply establishment; deferred WS has not necessarily dialed yet")
+	}
+	d.observe("[Info] transport/internet/websocket: websocket connection established")
+	if d.snapshot(time.Unix(1, 0)).Counts["outbound_established"] != 1 {
+		t.Fatal("explicit transport establishment event was lost")
+	}
+}
+
+func TestSessionDiagnosticsSeparatesWebSocketDialAndClose(t *testing.T) {
+	for _, fixture := range []struct {
+		line                 string
+		dial, close, failure uint32
+	}{
+		{"websocket: failed to dial > i/o timeout", 1, 0, 1},
+		{"websocket: close 1000 (normal)", 0, 1, 0},
+		{"app/proxyman/outbound: failed to decode response header > websocket: close 1006 (abnormal closure)", 0, 1, 1},
+		{"websocket: failed to dial > websocket: close 1006 (abnormal closure)", 0, 1, 1},
+	} {
+		d := newSessionDiagnostics(time.Unix(0, 0))
+		d.observe(fixture.line)
+		report := d.snapshot(time.Unix(1, 0))
+		if report.Counts["ws_dial_error"] != fixture.dial || report.Counts["ws_close"] != fixture.close || report.Counts["core_error"] != fixture.failure {
+			t.Fatalf("wrong WebSocket phase counters for synthetic line %q", fixture.line)
+		}
+	}
+}
+
+func TestSessionDiagnosticsRecognizesPinnedInterfaceFailureTypo(t *testing.T) {
+	d := newSessionDiagnostics(time.Unix(0, 0))
+	d.observe("[Info] proxy/tun: [tun] falied to set interface > iface == nil")
+	report := d.snapshot(time.Unix(1, 0))
+	if report.Counts["core_error"] != 1 || report.Counts["route_error"] != 1 || report.Counts["tun_error"] != 1 {
+		t.Fatal("pinned upstream interface failure typo was missed")
+	}
+}
+
+func TestSessionDiagnosticsAllowsOnlyFixedInterfaceFailureCodes(t *testing.T) {
+	for _, code := range []string{"outbound_interface_unavailable", "network_changed"} {
+		d := newSessionDiagnostics(time.Unix(0, 0))
+		d.setStatus("FAILED", code)
+		if report := d.snapshot(time.Unix(1, 0)); report.FinalCode != code || report.FinalState != "FAILED" {
+			t.Fatal("fixed interface failure code was discarded")
+		}
+		d.setStatus("FAILED", code+": private network details")
+		if d.snapshot(time.Unix(1, 0)).FinalCode != "unclassified" {
+			t.Fatal("free network error text crossed the code allowlist")
+		}
 	}
 }

@@ -4,6 +4,15 @@ import 'package:viora_client/data/server_latency.dart';
 
 void main() {
   test(
+    'an active or transitioning tunnel cannot expose local TCP ACK time',
+    () {
+      expect(visibleTcpConnectTime(6, tunnelIntercepts: true), isNull);
+      expect(visibleTcpConnectTime(71, tunnelIntercepts: false), 71);
+      expect(visibleTcpConnectTime(null, tunnelIntercepts: false), isNull);
+      expect(visibleTcpConnectTime(-1, tunnelIntercepts: false), isNull);
+    },
+  );
+  test(
     'measures a real local connection and closes it without sending data',
     () async {
       final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);

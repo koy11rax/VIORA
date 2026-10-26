@@ -19,6 +19,7 @@ var trustServiceReasons = [...]installTrustReason{
 	installTrustExecutable, installTrustKnownFolder, installTrustDirectoryMismatch,
 	installTrustEngineAttributes, installTrustCoreAttributes, installTrustXrayAttributes,
 	installTrustDriverAttributes, installTrustReparse,
+	installTrustFrontendAttributes,
 }
 
 func trustServiceCode(err error) uint32 {
@@ -138,6 +139,8 @@ func installerCLI() bool {
 		report.Outcome = "core_hash_mismatch"
 	} else if !verifiedDriver(directory, driverSHA) {
 		report.Outcome = "driver_hash_mismatch"
+	} else if !verifiedFrontend(directory) {
+		report.Outcome = "frontend_hash_mismatch"
 	} else if !verifiedFile(filepath.Join(directory, "viora_firewall.exe"), firewallSHA) {
 		report.Outcome = "firewall_hash_mismatch"
 	} else {

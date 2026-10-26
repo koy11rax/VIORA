@@ -11,7 +11,7 @@ $vioraArtifacts = Join-Path $vioraRoot 'artifacts'
 $vioraBuild = Join-Path $vioraArtifacts ($OutputName + '-installer')
 $vioraMsi = Join-Path $vioraArtifacts ($OutputName + '.msi')
 if ((Test-Path -LiteralPath $vioraBuild) -or (Test-Path -LiteralPath $vioraMsi)) { throw 'Installer already exists; choose another name' }
-foreach ($entry in @('Viora.exe','flutter_windows.dll','viora_tunnel.exe','core\xray.exe','core\wintun.dll','data\icudtl.dat')) {
+foreach ($entry in @('Viora.exe','flutter_windows.dll','viora_tunnel.exe','core\xray.exe','core\sing-box.exe','core\wintun.dll','data\icudtl.dat')) {
     if (!(Test-Path -LiteralPath (Join-Path $vioraBundle $entry))) { throw "Missing $entry" }
 }
 New-Item -ItemType Directory -Path $vioraBuild | Out-Null

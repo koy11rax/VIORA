@@ -36,6 +36,7 @@ def checksum(path):
 pinned = {
     'toolchains/xray-main/source.zip': '8b64534d8f3b91d902528ebba5cbfa05dccaf991efae49edf415dec7c0e3587f',
     'toolchains/wintun-0.14.1.zip': '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51',
+    'toolchains/sing-box/sing-box-v1.14.4-source.zip': '9037718f85b67a004517c6a9190b98c68483de643f57c62eb6c889e01beae4bc',
 }
 for name, expected in pinned.items():
     if sha(repo / name) != expected:
@@ -45,7 +46,7 @@ roots = ['apps/client/lib', 'apps/client/test', 'apps/client/assets',
          'apps/client/windows', 'apps/client/linux', 'apps/client/android',
          'desktop', 'third_party/flutter_v2ray_client',
          'third_party/androidlibxraylite', 'viora_control', 'tests', '.github',
-         'scripts']
+         'scripts', 'patches', 'third_party/sing-box']
 names = ['.gitignore', 'README.md', 'AGENTS.md', 'requirements-test.txt', 'requirements-control.txt',
          'apps/client/pubspec.yaml', 'apps/client/pubspec.lock',
          'apps/client/analysis_options.yaml',

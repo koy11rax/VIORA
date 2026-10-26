@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -106,3 +108,110 @@ func TestHelperRejectsInvalidInputWithoutStarting(t *testing.T) {
 type ioCloser struct{ *bytes.Reader }
 
 func (ioCloser) Close() error { return nil }
+
+func routingFixtureForMode(t *testing.T, mode string) map[string]any {
+	t.Helper()
+	f := fixture()
+	application := "/usr/bin/fixture"
+	if runtime.GOOS == "windows" {
+		application = `C:\Apps\fixture.exe`
+	}
+	f["desktop"] = map[string]any{"appMode": mode, "applications": []string{runtime.GOOS + ":" + application}, "reconnect": true, "retries": 3}
+	f["routing"].(map[string]any)["rules"] = append(f["routing"].(map[string]any)["rules"].([]any),
+		map[string]any{"type": "field", "ip": []string{"203.0.113.0/24"}, "outboundTag": "block"},
+		map[string]any{"type": "field", "domain": []string{"domain:private.example"}, "outboundTag": "direct"})
+	data, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clean, err := sanitizeConfig(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clean
+}
+
+func TestRoutingTerminalRuleAvoidsSecondaryDNSForTUN(t *testing.T) {
+	for _, mode := range []string{"all", "except", "only"} {
+		t.Run(mode, func(t *testing.T) {
+			clean := routingFixtureForMode(t, mode)
+			rules := clean["routing"].(map[string]any)["rules"].([]any)
+			wantTag := "proxy"
+			if mode == "only" {
+				wantTag = "direct"
+			}
+			want := map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": wantTag}
+			if !reflect.DeepEqual(rules[len(rules)-1], want) {
+				t.Fatalf("missing final first-pass route: got%v want%v", rules[len(rules)-1], want)
+			}
+			if clean["routing"].(map[string]any)["domainStrategy"] != "IPIfNonMatch" {
+				t.Fatal("routing strategy changed instead of making TUN fallback explicit")
+			}
+		})
+	}
+}
+
+func TestRoutingTerminalRulePreservesPolicyPrecedence(t *testing.T) {
+	for _, mode := range []string{"all", "except", "only"} {
+		t.Run(mode, func(t *testing.T) {
+			clean := routingFixtureForMode(t, mode)
+			rules := clean["routing"].(map[string]any)["rules"].([]any)
+			if len(rules) < 8 {
+				t.Fatal("existing routing policy lost")
+			}
+			prefix := []any{
+				map[string]any{"type": "field", "ip": []string{"::/0"}, "outboundTag": "block"},
+				map[string]any{"type": "field", "inboundTag": []string{"dns-internal"}, "outboundTag": "proxy"},
+				map[string]any{"type": "field", "port": "53", "outboundTag": "dns-out"},
+				map[string]any{"type": "field", "ip": []string{"172.29.255.2"}, "port": "853", "outboundTag": "block"},
+				map[string]any{"type": "field", "port": "853", "outboundTag": "proxy"},
+			}
+			if !reflect.DeepEqual(rules[:5], prefix) {
+				t.Fatal("DNS/IPv6 safety prefix changed")
+			}
+			for _, item := range rules[:len(rules)-1] {
+				if row := item.(map[string]any); row["network"] == "tcp,udp" {
+					t.Fatal("terminal route precedes user rules")
+				}
+			}
+			find := func(field, value, tag string) int {
+				for index, item := range rules {
+					row := item.(map[string]any)
+					if row["outboundTag"] != tag {
+						continue
+					}
+					encoded, _ := json.Marshal(row[field])
+					if bytes.Equal(encoded, []byte(`["`+value+`"]`)) {
+						return index
+					}
+				}
+				return -1
+			}
+			for _, expect := range []struct{ field, value, tag string }{{"domain", "domain:vk.com", "direct"}, {"ip", "203.0.113.0/24", "block"}, {"domain", "domain:private.example", "direct"}} {
+				if index := find(expect.field, expect.value, expect.tag); index < 5 || index >= len(rules)-1 {
+					t.Fatalf("user rule no longer precedes fallback: %+v", expect)
+				}
+			}
+			if mode == "except" && rules[5].(map[string]any)["process"] == nil {
+				t.Fatal("excluded-app rule was displaced")
+			}
+			if mode == "only" {
+				selected := rules[len(rules)-2].(map[string]any)
+				if selected["process"] == nil || selected["outboundTag"] != "proxy" {
+					t.Fatal("only-mode selected apps no longer precede terminal direct")
+				}
+			}
+			before, _ := json.Marshal(rules)
+			restrictDirect(clean)
+			after, _ := json.Marshal(clean["routing"].(map[string]any)["rules"])
+			if !bytes.Equal(before, after) {
+				t.Fatal("strict mode changed rule precedence")
+			}
+			for _, outbound := range clean["outbounds"].([]any) {
+				if outbound.(map[string]any)["protocol"] == "freedom" {
+					t.Fatal("terminal rule introduced strict direct bypass")
+				}
+			}
+		})
+	}
+}

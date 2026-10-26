@@ -212,6 +212,12 @@ func sanitizeConfig(data []byte) (map[string]any, error) {
 	}
 	if desktop.AppMode == "only" {
 		rules = append(rules, map[string]any{"type": "field", "process": processes, "outboundTag": "proxy"}, map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": "direct"})
+	} else {
+		// TUN destinations are already numeric. After explicit DNS, domain,
+		// subnet and process rules, route the remaining traffic immediately.
+		// Otherwise IPIfNonMatch re-resolves a sniffed SNI before forwarding
+		// to the same proxy, and an unrelated DNS stall blocks addressed TCP.
+		rules = append(rules, map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": "proxy"})
 	}
 	result := map[string]any{
 		"log": map[string]any{"loglevel": "info", "access": "none", "dnsLog": false},

@@ -15,7 +15,7 @@ import (
 func TestTrustedInstallFailuresUseFixedReasonsForEveryCheck(t *testing.T) {
 	const root = `C:\Program Files`
 	directory := filepath.Join(root, "Viora", "Engine")
-	paths := []string{directory, filepath.Join(directory, "core"), filepath.Join(directory, "core", "xray.exe"), filepath.Join(directory, "core", "wintun.dll")}
+	paths := []string{directory, filepath.Join(directory, "core"), filepath.Join(directory, "core", "xray.exe"), filepath.Join(directory, "core", "wintun.dll"), filepath.Join(directory, "core", "sing-box.exe")}
 	for _, fixture := range []struct {
 		name      string
 		rootError bool
@@ -29,10 +29,12 @@ func TestTrustedInstallFailuresUseFixedReasonsForEveryCheck(t *testing.T) {
 		{"core attributes", false, 1, -1, installTrustCoreAttributes},
 		{"xray attributes", false, 2, -1, installTrustXrayAttributes},
 		{"driver attributes", false, 3, -1, installTrustDriverAttributes},
+		{"frontend attributes", false, 4, -1, installTrustFrontendAttributes},
 		{"engine reparse", false, -1, 0, installTrustReparse},
 		{"core reparse", false, -1, 1, installTrustReparse},
 		{"xray reparse", false, -1, 2, installTrustReparse},
 		{"driver reparse", false, -1, 3, installTrustReparse},
+		{"frontend reparse", false, -1, 4, installTrustReparse},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			var calls []string
@@ -70,6 +72,20 @@ func TestTrustedInstallFailuresUseFixedReasonsForEveryCheck(t *testing.T) {
 				t.Fatal("underlying OS details crossed the static reason boundary")
 			}
 		})
+	}
+}
+
+func TestTrustedFrontendMustBeAFile(t *testing.T) {
+	const root = `C:\Program Files`
+	directory := filepath.Join(root, "Viora", "Engine")
+	reason := trustedInstallFailureWith(directory, func() (string, error) { return root, nil }, func(path string) (uint32, error) {
+		if path == frontendPath(directory) {
+			return windows.FILE_ATTRIBUTE_DIRECTORY, nil
+		}
+		return windows.FILE_ATTRIBUTE_ARCHIVE, nil
+	})
+	if reason != installTrustFrontendAttributes {
+		t.Fatal("a directory at the frontend executable path was trusted")
 	}
 }
 

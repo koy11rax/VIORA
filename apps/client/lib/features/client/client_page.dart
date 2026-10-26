@@ -31,6 +31,10 @@ class ClientState {
   final rules = <RoutingRule>[];
   final subscriptions = <String, List<String>>{};
   final latency = <String, int>{};
+  int? tcpConnectTime(VlessProfile profile) => visibleTcpConnectTime(
+    latency[profile.toShareLink()],
+    tunnelIntercepts: tunnel.running || tunnel.busy,
+  );
   VoidCallback? onChanged;
   int selectedProfile = -1, demoProfile = 0;
   bool profilesLoaded = false, startupHandled = false;
@@ -508,41 +512,62 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     }
     final profile = state.profiles[state.selectedProfile];
     final key = profile.toShareLink();
+    final phase = state.tunnel.phase;
+    var invalidated = false;
+    void invalidateOnTunnelChange() {
+      if (state.tunnel.phase != phase || state.tunnel.busy) {
+        invalidated = true;
+      }
+    }
+
+    state.tunnel.addListener(invalidateOnTunnelChange);
     bool selected() =>
-        mounted && identical(widget.state, state) && _selectedLink == key;
+        mounted &&
+        !invalidated &&
+        identical(widget.state, state) &&
+        _selectedLink == key &&
+        state.tunnel.phase == phase &&
+        !state.tunnel.busy;
     setState(() {
       measuring = true;
       state.latency.remove(key);
     });
     try {
-      final value = await (widget.measureLatency ?? measureServerLatency)(
-        profile.host,
-        profile.port,
-      );
-      if (!mounted || !identical(widget.state, state)) return;
-      setState(() {
-        state.latency[key] = value;
-      });
-      if (!selected() || state.tunnel.busy) return;
-      final probe =
-          widget.connectedProbe ??
-          (Platform.isAndroid ? () => AndroidConnectionProbe.measure() : null);
-      if (probe != null && state.tunnel.running) {
+      if (state.tunnel.running) {
+        final probe =
+            widget.connectedProbe ??
+            (Platform.isAndroid
+                ? () => AndroidConnectionProbe.measure()
+                : null);
+        if (probe == null) {
+          notice(
+            'При включённом VPN TCP может подтверждать локальный адаптер. Этот тест не измеряет задержку или доступность удалённого сервера.',
+          );
+          return;
+        }
         int? delay;
         try {
           delay = await probe();
         } catch (_) {
-          // Keep the confirmed TCP result separate from a failed core probe.
+          // A failed test endpoint must not become a claim of a general outage.
         }
-        if (!selected() || !state.tunnel.running || state.tunnel.busy) return;
+        if (!selected() || !state.tunnel.running) return;
         notice(
           delay != null && delay >= 0
-              ? 'TCP-порт доступен: $value мс; тестовый сайт через VPN ответил за $delay мс.'
-              : 'TCP-порт доступен, но нет ответа тестового сайта через VPN. Проверь другой сервер; этот сайт также может быть недоступен отдельно.',
+              ? 'Тестовый сайт через VPN ответил за $delay мс. Это время HTTPS-ответа, а не пинг сервера.'
+              : 'Нет ответа тестового сайта через VPN. Проверь другой сервер; этот сайт также может быть недоступен отдельно.',
         );
       } else {
+        final value = await (widget.measureLatency ?? measureServerLatency)(
+          profile.host,
+          profile.port,
+        );
+        if (!selected() || state.tunnel.running) return;
+        setState(() {
+          state.latency[key] = value;
+        });
         notice(
-          'TCP-порт доступен: $value мс. Это проверка порта, она не подтверждает передачу данных через VPN.',
+          'TCP-соединение установлено за $value мс. Это не подтверждает ответ удалённого сервера или передачу данных через VPN.',
         );
       }
     } catch (_) {
@@ -552,6 +577,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
         );
       }
     } finally {
+      state.tunnel.removeListener(invalidateOnTunnelChange);
       if (mounted) {
         setState(() {
           measuring = false;

@@ -128,4 +128,7 @@ func TestInstallerTrustServiceCodesRoundTrip(t *testing.T) {
 	if trustServiceCode(errors.New("private-error")) != 0x2100 || serviceTrustReason(3) != "" || serviceTrustReason(0xffffffff) != "" {
 		t.Fatal("unknown code or raw error accepted")
 	}
+	if trustServiceCode(installTrustDriverAttributes) != 0x2107 || trustServiceCode(installTrustReparse) != 0x2108 || trustServiceCode(installTrustFrontendAttributes) != 0x2109 {
+		t.Fatal("adding frontend diagnostics renumbered a published service failure")
+	}
 }
