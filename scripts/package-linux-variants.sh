@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 022
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${VIORA_VERSION:-1.0.0}"
+version="${VIORA_VERSION:-1.0.5}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 deb="${1:-$root/artifacts/Viora-Linux-$version-amd64.deb}"
 for tool in dpkg-deb rpmbuild makepkg pacman bsdtar fakeroot zstd sha256sum; do
@@ -20,16 +20,8 @@ work="$root/artifacts/linux-variants-$version"
 [[ ! -e "$work" ]] || { echo 'Variant work directory already exists'; exit 1; }
 mkdir -p "$work/payload" "$work/rpm/"{SOURCES,SPECS,BUILD,BUILDROOT,RPMS,SRPMS} "$work/arch"
 dpkg-deb -x "$deb" "$work/payload"
-install -m644 "$root/docs/linux-install-variants-$version.md" "$work/payload/usr/lib/viora/READ-ME-RU.txt"
-install -m644 "$root/apps/client/assets/licenses/flutter_v2ray_client-MIT.txt" "$work/payload/usr/lib/viora/licenses/"
-cat > "$work/payload/usr/lib/viora/licenses/VIORA.txt" <<EOF
-Отдельная лицензия собственного кода VIORA пока не назначена.
-Публикация исходников сама по себе не предоставляет общую лицензию.
-LicenseRef-VIORA обозначает этот статус, а не лицензию сторонних компонентов.
-Сторонние лицензии: Xray MPL-2.0, Flutter BSD-3-Clause, flutter_v2ray_client MIT.
-Полный набор уведомлений Flutter расположен в data/flutter_assets/NOTICES.Z.
-Исходники клиента и закреплённого движка: Viora-Desktop-$version-source.zip.
-EOF
+# Keep the DEB's verified payload byte for byte, including license/source files.
+# Metadata recipes below supply only target package-manager dependencies/hooks.
 find "$work/payload" -type d -exec chmod 755 {} +
 find "$work/payload" -type f -exec chmod go-w {} +
 # No privileged ownership changes required on the build host.
@@ -61,5 +53,9 @@ done
 # Reusable local recipes include the exact binary source and its hash.
 tar --owner=0 --group=0 --numeric-owner -C "$work/arch" -czf "$root/artifacts/Viora-Linux-$version-Arch-recipe.tar.gz" PKGBUILD .SRCINFO viora.install "$payload"
 cp "$work/rpm/SPECS/viora.spec" "$root/artifacts/Viora-Linux-$version.spec"
+cp "$work/$payload" "$root/artifacts/$payload"
+for artifact in "$root/artifacts/Viora-Linux-$version-Arch-recipe.tar.gz" "$root/artifacts/Viora-Linux-$version.spec" "$root/artifacts/$payload"; do
+  (cd "$(dirname "$artifact")"; sha256sum "$(basename "$artifact")" > "$(basename "$artifact").sha256")
+done
 echo "$rpm"
 echo "$arch"

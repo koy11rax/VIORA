@@ -19,7 +19,14 @@ func openControl() (io.ReadCloser, io.Writer, error) {
 func coreName() string                              { return "xray" }
 func applySystemProtection(settings map[string]any) { settings["autoSystemDnsToGateway"] = true }
 func applyPlatformConfig(config map[string]any) {
-	// Shared DNS interception handles the system resolver's virtual address too.
+	// Follow the administrator-managed OS trust store, as Windows does. Current
+	// Xray otherwise defaults to its bundled roots on Linux and silently ignores
+	// system-installed CAs. This native policy cannot be selected by imported IPC.
+	proxy := proxyMap(config)
+	stream := proxy["streamSettings"].(map[string]any)
+	if stream["security"] == "tls" {
+		stream["tlsSettings"].(map[string]any)["useSystemCA"] = true
+	}
 }
 func trustedInstall(directory string) bool {
 	if directory != "/usr/lib/viora" {

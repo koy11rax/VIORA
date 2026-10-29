@@ -2,9 +2,9 @@ name: Source safety and regression checks
 on:
   workflow_dispatch:
   push:
-    paths: ['apps/**', 'desktop/**', 'third_party/**', 'viora_control/**', 'tests/**', '.github/workflows/audit.yml', 'requirements-test.txt', 'requirements-control.txt']
+    paths: ['apps/**', 'desktop/**', 'third_party/**', 'viora_control/**', 'tests/**', 'patches/**', 'scripts/**', '.github/workflows/audit.yml', 'requirements-test.txt', 'requirements-control.txt']
   pull_request:
-    paths: ['apps/**', 'desktop/**', 'third_party/**', 'viora_control/**', 'tests/**', '.github/workflows/audit.yml', 'requirements-test.txt', 'requirements-control.txt']
+    paths: ['apps/**', 'desktop/**', 'third_party/**', 'viora_control/**', 'tests/**', 'patches/**', 'scripts/**', '.github/workflows/audit.yml', 'requirements-test.txt', 'requirements-control.txt']
 permissions:
   contents: read
 jobs:
@@ -36,6 +36,25 @@ jobs:
           cache-dependency-path: desktop/tunnel/go.sum
       - run: go test ./...
       - run: go vet ./...
+  linux-frontend:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Fetch pinned upstream source
+        shell: bash
+        run: |
+          mkdir -p toolchains/sing-box
+          curl --fail --location --retry 3 https://codeload.github.com/SagerNet/sing-box/zip/refs/tags/v1.14.4 -o toolchains/sing-box/sing-box-v1.14.4-source.zip
+          printf '%s\n' '9037718f85b67a004517c6a9190b98c68483de643f57c62eb6c889e01beae4bc  toolchains/sing-box/sing-box-v1.14.4-source.zip' | sha256sum -c -
+      - run: python3 scripts/build-linux-frontend.py --test-binary
+      - name: Verify process-owner regression without networking
+        run: artifacts/desktop-core/linux/sing-box-local-source.test -test.run '^TestViora' -test.v
+      - run: python3 scripts/test-linux-package-preflight.py
   flutter:
     runs-on: windows-2022
     timeout-minutes: 20

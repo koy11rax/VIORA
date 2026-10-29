@@ -111,6 +111,14 @@ func policyRule(expressions []map[string]json.RawMessage) string {
 			}
 			value = "viora"
 		}
+		// nft -n -j may emit numeric protocol identifiers instead of names.
+		// Normalize only the exact protocols used by our fixed DHCP rule.
+		if key == "meta:nfproto" && value == "2" {
+			value = "ipv4"
+		}
+		if key == "meta:l4proto" && value == "17" {
+			value = "udp"
+		}
 		condition := key + "=" + value
 		if conditions[condition] {
 			return ""

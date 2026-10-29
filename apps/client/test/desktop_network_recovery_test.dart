@@ -212,6 +212,9 @@ void main() {
     'frontend_exited': 'VPN-компонент неожиданно остановился.',
     'frontend_integrity': 'Сетевой компонент VPN отсутствует или повреждён.',
     'bridge_config_failed': 'Не удалось подготовить конфигурацию VPN.',
+    'system_dns_failed': 'Не удалось настроить системный DNS для VPN.',
+    'routing_setup_failed': 'Не удалось подготовить маршрутизацию Linux.',
+    'routing_cleanup_failed': 'Не удалось полностью очистить маршруты VIORA.',
   };
   for (final entry in bridgeMessages.entries) {
     final code = entry.key;

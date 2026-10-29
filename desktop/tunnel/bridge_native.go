@@ -19,11 +19,15 @@ import (
 	"time"
 )
 
-// Windows has two narrowly scoped engines: sing-box owns the system TUN,
+// Desktop has two narrowly scoped engines: sing-box owns the system TUN,
 // while Xray owns only authenticated local SOCKS and the existing VLESS transport.
 // Neither configuration is written to disk or passed in a process argument.
 func runPlatformBridge(parent context.Context, config map[string]any, directory string, protected bool, emit func(status), diagnostics *sessionDiagnostics) bool {
-	fail := func(code string) { emit(status{State: "FAILED", Code: code}) }
+	fail := func(code string) { emit(bridgeFailureStatus(parent.Err() != nil, code)) }
+	if parent.Err() != nil {
+		emit(status{State: "DISCONNECTED"})
+		return true
+	}
 	if !verifiedFrontend(directory) {
 		fail("frontend_integrity")
 		return true
@@ -33,6 +37,12 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 		fail("outbound_interface_unavailable")
 		return true
 	}
+	cleanupNetwork, err := prepareBridgeNetwork(parent)
+	if err != nil {
+		fail("routing_setup_failed")
+		return true
+	}
+	defer cleanupNetwork()
 	reservation, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		fail("bridge_config_failed")
@@ -56,7 +66,7 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 	}
 	username, password := hex.EncodeToString(secret[:16]), hex.EncodeToString(secret[16:])
 	clear(secret)
-	backend, frontend, err := buildWindowsBridge(config, proxyPort, username, password)
+	backend, frontend, err := buildPlatformBridge(config, proxyPort, username, password)
 	if err != nil {
 		reservation.Close()
 		metricsReservation.Close()
@@ -93,7 +103,7 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 		}
 		if stage == "backend" {
 			cmd := exec.Command(filepath.Join(directory, "core", coreName()), "run", "-format", "json", "-config", "stdin:")
-			return startBridgeChild(cmd, backendBytes, stage, diagnostics, func(ready context.Context, child *windowsBridgeProcess) error {
+			return startBridgeChild(cmd, backendBytes, stage, diagnostics, func(ready context.Context, child *desktopBridgeProcess) error {
 				address := net.JoinHostPort("127.0.0.1", fmt.Sprint(proxyPort))
 				for {
 					if ownedBridgeListener(uint32(child.cmd.Process.Pid), proxyPort) && ownedBridgeListener(uint32(child.cmd.Process.Pid), metricsPort) {
@@ -112,13 +122,17 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 			})
 		}
 		cmd := exec.Command(frontendPath(directory), "run", "-c", "stdin")
-		return startBridgeChild(cmd, frontendBytes, stage, diagnostics, func(context.Context, *windowsBridgeProcess) error {
+		return startBridgeChild(cmd, frontendBytes, stage, diagnostics, func(ready context.Context, _ *desktopBridgeProcess) error {
 			if !checkNetwork() {
 				noteFailure("network_changed")
 				return errors.New("underlay changed")
 			}
 			if !tunReady() {
 				return errors.New("system TUN not ready")
+			}
+			if err := readyBridgeDNS(ready); err != nil {
+				noteFailure("system_dns_failed")
+				return err
 			}
 			return nil
 		})
@@ -153,14 +167,16 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 	if monitorStarted {
 		<-monitorDone
 	}
+	// Both children have now stopped. A forced frontend exit may leave routing
+	// policy behind; clear only this session's reserved kernel policy lease.
+	cleanupError := cleanupNetwork()
+	runtimeCode := ""
 	select {
 	case reported := <-runtimeFailure:
-		code = reported
+		runtimeCode = reported
 	default:
 	}
-	if parent.Err() != nil {
-		code = ""
-	}
+	code = bridgeSessionResult(parent.Err() != nil, code, runtimeCode, cleanupError)
 	if code == "" {
 		emit(status{State: "DISCONNECTED"})
 	} else {
@@ -169,7 +185,7 @@ func runPlatformBridge(parent context.Context, config map[string]any, directory 
 	return true
 }
 
-type windowsBridgeProcess struct {
+type desktopBridgeProcess struct {
 	cmd      *exec.Cmd
 	done     chan struct{}
 	marked   chan struct{}
@@ -177,10 +193,10 @@ type windowsBridgeProcess struct {
 	logs     io.ReadCloser
 	cleanup  func()
 	stopOnce sync.Once
-	ready    func(context.Context, *windowsBridgeProcess) error
+	ready    func(context.Context, *desktopBridgeProcess) error
 }
 
-func startBridgeChild(cmd *exec.Cmd, config []byte, stage string, diagnostics *sessionDiagnostics, ready func(context.Context, *windowsBridgeProcess) error) (*windowsBridgeProcess, error) {
+func startBridgeChild(cmd *exec.Cmd, config []byte, stage string, diagnostics *sessionDiagnostics, ready func(context.Context, *desktopBridgeProcess) error) (*desktopBridgeProcess, error) {
 	cmd.Dir = filepath.Dir(cmd.Path)
 	cmd.Env = cleanEnvironment()
 	cmd.Stdin = bytes.NewReader(config) // EOF is required by sing-box's stdin loader.
@@ -210,7 +226,7 @@ func startBridgeChild(cmd *exec.Cmd, config []byte, stage string, diagnostics *s
 		closePipes()
 		return nil, err
 	}
-	child := &windowsBridgeProcess{cmd: cmd, done: make(chan struct{}), marked: make(chan struct{}), logsDone: make(chan struct{}), logs: logs, cleanup: cleanup, ready: ready}
+	child := &desktopBridgeProcess{cmd: cmd, done: make(chan struct{}), marked: make(chan struct{}), logsDone: make(chan struct{}), logs: logs, cleanup: cleanup, ready: ready}
 	go func() {
 		defer close(child.logsDone)
 		marked := false
@@ -237,9 +253,9 @@ func startBridgeChild(cmd *exec.Cmd, config []byte, stage string, diagnostics *s
 	return child, nil
 }
 
-func (child *windowsBridgeProcess) Done() <-chan struct{} { return child.done }
+func (child *desktopBridgeProcess) Done() <-chan struct{} { return child.done }
 
-func (child *windowsBridgeProcess) Ready(ctx context.Context) error {
+func (child *desktopBridgeProcess) Ready(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -250,7 +266,7 @@ func (child *windowsBridgeProcess) Ready(ctx context.Context) error {
 	return child.ready(ctx, child)
 }
 
-func (child *windowsBridgeProcess) Stop() {
+func (child *desktopBridgeProcess) Stop() {
 	child.stopOnce.Do(func() {
 		defer child.cleanup()
 		select {

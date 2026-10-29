@@ -24,12 +24,19 @@ $patchedSniff=Join-Path $root 'patches\xray-desktop\tls_sniff.go'
 if (!(Test-Path -LiteralPath $patchedSniff -PathType Leaf)) { throw 'Missing tracked desktop TLS sniffer overlay' }
 $driver=Join-Path $root 'toolchains\wintun\wintun\bin\amd64\wintun.dll'
 $driverHash='e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce'
-if ((Get-FileHash -LiteralPath $driver).Hash.ToLowerInvariant() -ne $driverHash) { throw 'Expected official Wintun 0.14.1 amd64' }
-$frontendSource=Join-Path $root 'toolchains\sing-box\sing-box-1.14.4-windows-amd64\sing-box.exe'
-$frontendHash='8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9'
 if ($Platforms -contains 'windows') {
-    if (!(Test-Path -LiteralPath $frontendSource -PathType Leaf) -or (Get-FileHash -LiteralPath $frontendSource).Hash.ToLowerInvariant() -ne $frontendHash) {
-        throw 'Expected the verified official sing-box 1.14.4 Windows amd64 frontend'
+    if (!(Test-Path -LiteralPath $driver -PathType Leaf) -or (Get-FileHash -LiteralPath $driver).Hash.ToLowerInvariant() -ne $driverHash) {
+        throw 'Expected official Wintun 0.14.1 amd64'
+    }
+}
+$frontends=@{
+    windows=@{Source='toolchains\sing-box\sing-box-1.14.4-windows-amd64\sing-box.exe'; Hash='8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9'; Name='sing-box.exe'}
+    linux=@{Source='artifacts\desktop-core\linux\sing-box'; Hash='c555912d5dfe2a1dc541666bf4c404a13a7630a711898ceb1a7482e07b0b4032'; Name='sing-box'}
+}
+foreach ($platform in $Platforms) {
+    $frontendSource=Join-Path $root $frontends[$platform].Source
+    if (!(Test-Path -LiteralPath $frontendSource -PathType Leaf) -or (Get-FileHash -LiteralPath $frontendSource).Hash.ToLowerInvariant() -ne $frontends[$platform].Hash) {
+        throw "Expected the pinned sing-box $platform amd64 frontend; build the Linux frontend with scripts/build-linux-frontend.py first"
     }
 }
 $env:CGO_ENABLED='0'; $env:GOARCH='amd64'
@@ -50,27 +57,27 @@ try {
         $env:GOOS=$platform
         $output=Join-Path $root "artifacts\desktop-core\$platform"
         New-Item -ItemType Directory -Path $output -Force | Out-Null
-        if ($platform -eq 'windows') {
-            $frontend=Join-Path $output 'sing-box.exe'
-            if (!(Test-Path -LiteralPath $frontend) -or (Get-FileHash -LiteralPath $frontend).Hash.ToLowerInvariant() -ne $frontendHash) {
-                Copy-Item -LiteralPath $frontendSource -Destination $frontend
-            }
-            if ((Get-FileHash -LiteralPath $frontend).Hash.ToLowerInvariant() -ne $frontendHash) { throw 'Frontend copy integrity mismatch' }
+        $frontendSource=Join-Path $root $frontends[$platform].Source
+        $frontendHash=$frontends[$platform].Hash
+        $frontend=Join-Path $output $frontends[$platform].Name
+        if (!(Test-Path -LiteralPath $frontend) -or (Get-FileHash -LiteralPath $frontend).Hash.ToLowerInvariant() -ne $frontendHash) {
+            Copy-Item -LiteralPath $frontendSource -Destination $frontend
         }
+        if ((Get-FileHash -LiteralPath $frontend).Hash.ToLowerInvariant() -ne $frontendHash) { throw 'Frontend copy integrity mismatch' }
         $suffix=if ($platform -eq 'windows') { '.exe' } else { '' }
         $core=Join-Path $output ('xray'+$suffix)
         Push-Location $source
-        try { & $go build -mod=readonly -overlay $overlay.FullName -trimpath -ldflags '-s -w' -o $core ./main; if ($LASTEXITCODE -ne 0) { throw 'Xray build failed' } } finally { Pop-Location }
+        try { & $go build -mod=readonly -buildvcs=false -overlay $overlay.FullName -trimpath -ldflags '-s -w' -o $core ./main; if ($LASTEXITCODE -ne 0) { throw 'Xray build failed' } } finally { Pop-Location }
         $coreHash=(Get-FileHash -LiteralPath $core).Hash.ToLowerInvariant()
-        $flags="-s -w -X main.coreSHA=$coreHash"
+        $flags="-s -w -X main.coreSHA=$coreHash -X main.frontendSHA=$frontendHash"
         if ($platform -eq 'windows') {
           $firewall=Join-Path $output 'viora_firewall.exe'
           if (!(Test-Path -LiteralPath $firewall)) { throw 'Build desktop/windows/firewall with CMake and copy viora_firewall.exe into artifacts/desktop-core/windows first' }
           $firewallHash=(Get-FileHash -LiteralPath $firewall).Hash.ToLowerInvariant()
-          $flags+=" -H windowsgui -X main.driverSHA=$driverHash -X main.firewallSHA=$firewallHash -X main.frontendSHA=$frontendHash"
+          $flags+=" -H windowsgui -X main.driverSHA=$driverHash -X main.firewallSHA=$firewallHash"
         }
         Push-Location (Join-Path $root 'desktop\tunnel')
-        try { & $go build -trimpath -ldflags $flags -o (Join-Path $output ('viora_tunnel'+$suffix)) .; if ($LASTEXITCODE -ne 0) { throw 'Helper build failed' } } finally { Pop-Location }
+        try { & $go build -mod=readonly -buildvcs=false -trimpath -ldflags $flags -o (Join-Path $output ('viora_tunnel'+$suffix)) .; if ($LASTEXITCODE -ne 0) { throw 'Helper build failed' } } finally { Pop-Location }
     }
     if ($SkipTests) { Write-Output 'Native build completed; runtime tests were not run.'; return }
     $env:GOOS='windows'

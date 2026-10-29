@@ -2,11 +2,11 @@ package main
 
 import "context"
 
-// Keep the existing Linux policy: protected sessions bootstrap through fixed
-// HTTPS; ordinary sessions retain their platform resolver behavior.
+// The backend must receive a numeric endpoint before TUN routes/DNS are active.
+// Strict protection never falls back to an ordinary cleartext DNS lookup.
 func prepareEndpoint(ctx context.Context, config map[string]any, protected bool) error {
-	if protected {
-		return resolveEndpoint(ctx, config, false)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return ctx.Err()
+	return resolveEndpoint(ctx, config, !protected)
 }

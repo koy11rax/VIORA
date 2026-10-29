@@ -1,9 +1,19 @@
-# sing-box для Windows VIORA
+# sing-box для настольной VIORA
 
 Используется самостоятельный официальный исполняемый файл sing-box 1.14.4
 (стабильный выпуск `v1.14.4`), не файл из установленного Happ. Он запускается
 защищённой службой с конфигурацией в stdin и управляет только Windows TUN.
 Локальный SOCKS-транспорт предоставляется отдельным Xray.
+
+Linux 1.0.5 использует ту же схему с компонентом **1.14.4-viora.1**, собранным
+из закреплённых исходников v1.14.4. Точный overlay
+`patches/sing-box-desktop/process_cache.go` сверяет локальные адреса с ядром
+после промаха кэша; это исправляет поиск программ после переподключений.
+Windows Wintun/WFP в Linux не используются. SHA-256 Linux `sing-box`:
+`c555912d5dfe2a1dc541666bf4c404a13a7630a711898ceb1a7482e07b0b4032`.
+Сборщик: `scripts/build-linux-frontend.py`, Go 1.27.3, CGO=0, без optional tags.
+Linux-пакеты содержат исходный архив, overlay, его уведомление и сборщик.
+Полная инструкция: [Linux 1.0.5](../../docs/linux-sing-box-provenance-1.0.5.md).
 
 - Выпуск: https://github.com/SagerNet/sing-box/releases/tag/v1.14.4
 - Официальный архив: https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip

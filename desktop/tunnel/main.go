@@ -301,7 +301,7 @@ func main() {
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println("Viora tunnel 0.8.2")
+		fmt.Println("Viora tunnel 1.0.5")
 		return
 	}
 	input, output, err := openControl()

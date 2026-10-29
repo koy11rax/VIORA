@@ -1,0 +1,19 @@
+{
+  "version": "1.14.4-viora.1",
+  "modified_by": "VIORA",
+  "modified_date": "2026-10-29",
+  "compiler": "go1.27.3",
+  "goos": "linux",
+  "goarch": "amd64",
+  "cgo_enabled": "0",
+  "build_tags": [],
+  "binary_sha256": "c555912d5dfe2a1dc541666bf4c404a13a7630a711898ceb1a7482e07b0b4032",
+  "upstream_route_process_cache_sha256": "7ebba50b44a1f8ee12430ee0ebd085c5c78cd751b15407746d282acf595c4263",
+  "files": {
+    "toolchains/sing-box/sing-box-v1.14.4-source.zip": "9037718f85b67a004517c6a9190b98c68483de643f57c62eb6c889e01beae4bc",
+    "patches/sing-box-desktop/process_cache.go": "b418d8cbb9f19b1e02094421de778db61b3b9b13c6cbc95b0f803f0a324eeaa6",
+    "patches/sing-box-desktop/process_cache_test.go": "f4f0458e2052d2f21a9d87c9c82459b8a4705ba1b7095599b85b4ebdbd8d5590",
+    "patches/sing-box-desktop/README.md": "ebc2129d8f76b48eab242f28641fc7c839bd38aa324ac2fad0c2e9b302ac8486",
+    "scripts/build-linux-frontend.py": "28214bb2b867e29e49896284177bfc754dc6876056a22420980387d5223720a9"
+  }
+}

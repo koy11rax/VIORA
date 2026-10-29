@@ -10,12 +10,12 @@ Name: viora
 Version: @VERSION@
 Release: 1
 Summary: VIORA VPN — клиент VPN и управление подпиской
-License: LicenseRef-VIORA AND MPL-2.0 AND BSD-3-Clause AND MIT
+License: LicenseRef-VIORA AND MPL-2.0 AND GPL-3.0-or-later AND BSD-3-Clause AND MIT
 URL: https://github.com/koy11rax/VIORA
 Source0: Viora-Linux-@VERSION@-payload.tar.gz
 ExclusiveArch: x86_64
 Requires: gtk3, libsecret, libayatana-appindicator-gtk3
-Requires: libayatana-indicator-gtk3, polkit, systemd-resolved, nftables
+Requires: libayatana-indicator-gtk3, polkit, systemd-resolved, nftables, iproute, ca-certificates
 Requires: glibc >= 2.35
 Recommends: gnome-keyring
 
@@ -55,5 +55,6 @@ systemctl daemon-reload >/dev/null 2>&1 || :
 systemctl daemon-reload >/dev/null 2>&1 || :
 
 %changelog
-* Thu Oct 22 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
-- Fedora RPM; preserved core hashes, desktop integration and polkit policy.
+* Thu Oct 29 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
+- Linux 1.0.5: shared desktop UI, sing-box TUN and Xray transport.
+- Preserve binary hashes, licenses, source archive and upgrade protection.

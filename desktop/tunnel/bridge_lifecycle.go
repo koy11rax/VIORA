@@ -5,6 +5,28 @@ import (
 	"time"
 )
 
+// A failed network cleanup requires deliberate recovery, even when the user
+// cancelled or an engine/network failure would otherwise trigger auto-retry.
+func bridgeSessionResult(cancelled bool, lifecycleCode, runtimeCode string, cleanupError error) string {
+	if cleanupError != nil {
+		return "routing_cleanup_failed"
+	}
+	if cancelled {
+		return ""
+	}
+	if runtimeCode != "" {
+		return runtimeCode
+	}
+	return lifecycleCode
+}
+
+func bridgeFailureStatus(cancelled bool, code string) status {
+	if cancelled && code != "routing_cleanup_failed" {
+		return status{State: "DISCONNECTED"}
+	}
+	return status{State: "FAILED", Code: code}
+}
+
 // A session owns both children. No child, readiness task, or local proxy is
 // allowed to outlive the connection which created it.
 type bridgeProcess interface {
