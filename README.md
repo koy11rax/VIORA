@@ -7,17 +7,17 @@ VPN-клиент для Android, Windows и Linux. Графитовый инте
 
 - [Android APK 1.0.2](https://github.com/koy11rax/VIORA/releases/download/v1.0.2/Viora-Android-1.0.2-release.apk)
 - [Windows: установщик EXE 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5/Viora-Windows-1.0.5-Setup.exe)
-- [Debian / Ubuntu: DEB](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-amd64.deb)
-- [Fedora: RPM](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/Viora-Linux-1.0.0-1.x86_64.rpm)
-- [Arch: пакет pacman](https://github.com/koy11rax/VIORA/releases/download/v1.0.0/viora-bin-1.0.0-1-x86_64.pkg.tar.zst)
+- [Debian / Ubuntu: DEB 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/Viora-Linux-1.0.5-amd64.deb)
+- [Fedora: RPM 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/Viora-Linux-1.0.5-1.x86_64.rpm)
+- [Arch: пакет pacman 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/viora-bin-1.0.5-1-x86_64.pkg.tar.zst)
 - [Android: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.2)
 - [Windows 1.0.5: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.5)
-- [Linux: все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.0)
+- [Linux 1.0.5: исходники, все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.5-linux)
 
 Android 1.0.2 исправляет восстановление соединения, применение обновлённой
 подписки и сохранение выбранного способа подключения. Проверка пинга отдельно
 показывает ответ HTTPS через активный VPN: [изменения и проверки](docs/android-release-1.0.2.md).
-Плитка быстрых настроек сохранена. Публичные ссылки Linux выше относятся к 1.0.0.
+Плитка быстрых настроек сохранена.
 
 Linux 1.0.5 переносит актуальный интерфейс Windows и отдельный TUN-компонент
 sing-box на Linux. Добавлены проверка DNS через туннель до подключения,
@@ -72,6 +72,7 @@ Linux-пакеты Fedora/Arch используют общий бинарник,
 Результаты проверки и непроверенные сценарии:
 [Android 1.0.2](docs/android-release-1.0.2.md),
 [Windows 1.0.5](docs/windows-connectivity-1.0.5.md),
+[Linux 1.0.5](docs/linux-release-1.0.5.md),
 [Windows/Linux 1.0.0](docs/release-1.0.0.md).
 Предыдущий подробный аудит: [отчёт](docs/security-audit-2026-10-22.md).
 Успешные проверки не являются доказательством отсутствия всех уязвимостей или утечек.
@@ -84,7 +85,7 @@ desktop-служба — Go, фильтры Windows — C++/WFP, серверн�
 
 - [Сборка Android](docs/android-source-build.md)
 - [Сборка Windows/Linux](docs/desktop-source-build-1.0.0.md)
-- [Установка Linux](docs/linux-install-variants-1.0.0.md)
+- [Установка Linux 1.0.5](docs/linux-install-variants-1.0.5.md)
 - [Воспроизведение проверок аудита](docs/audit-reproduction-2026-10-22.md)
 
 Локальные проверки: `flutter analyze --no-pub`, `flutter test --no-pub`,
