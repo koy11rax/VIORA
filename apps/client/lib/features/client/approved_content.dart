@@ -236,7 +236,7 @@ class ApprovedContent extends StatelessWidget {
   String get selectedProtocol =>
       state.selectedProfile >= 0 &&
           state.selectedProfile < state.profiles.length
-      ? 'VLESS · ${state.profiles[state.selectedProfile].transport.toUpperCase()} · ${state.profiles[state.selectedProfile].security.toUpperCase()}'
+      ? state.profiles[state.selectedProfile].displayLabel
       : demo
       ? demoProtocols[state.demoProfile]
       : 'Импортируй профиль или подключи подписку';
@@ -513,7 +513,7 @@ class ApprovedContent extends StatelessWidget {
                       ),
                       gap(6),
                       Text(
-                        'Импортируй подписку из бота или ссылку VLESS.',
+                        'Добавь подписку или ссылку сервера: VLESS, VMess, Trojan, Shadowsocks, Hysteria2.',
                         style: TextStyle(
                           fontSize: 12,
                           color: c.muted,
@@ -544,7 +544,7 @@ class ApprovedContent extends StatelessWidget {
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'VLESS · ${state.profiles[i].transport.toUpperCase()}',
+                      state.profiles[i].displayLabel,
                       style: TextStyle(fontSize: 11, color: c.muted),
                     ),
                   ),
@@ -814,26 +814,23 @@ class ApprovedContent extends StatelessWidget {
     );
   }
 
-  Widget importedServer(
-    BuildContext context,
-    int i,
-    String source,
-  ) => serverRow(
-    context,
-    state.profiles[i].name,
-    'VLESS · ${state.profiles[i].transport.toUpperCase()} · ${state.profiles[i].security.toUpperCase()}',
-    source,
-    state.selectedProfile == i,
-    () {
-      if (onSelectServer != null) {
-        onSelectServer!(i);
-      } else {
-        state.selectedProfile = i;
-        onChanged();
-      }
-    },
-    latency: state.tcpConnectTime(state.profiles[i]),
-  );
+  Widget importedServer(BuildContext context, int i, String source) =>
+      serverRow(
+        context,
+        state.profiles[i].name,
+        state.profiles[i].displayLabel,
+        source,
+        state.selectedProfile == i,
+        () {
+          if (onSelectServer != null) {
+            onSelectServer!(i);
+          } else {
+            state.selectedProfile = i;
+            onChanged();
+          }
+        },
+        latency: state.tcpConnectTime(state.profiles[i]),
+      );
 
   Widget servers(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -917,7 +914,7 @@ class ApprovedContent extends StatelessWidget {
       if (!demo && state.otherProfileIndices.isEmpty)
         const DesignCard(
           child: Text(
-            'Серверы ещё не добавлены. Вставь ссылку подписки из бота или VLESS.',
+            'Добавь подписку своего провайдера или отдельный сервер.',
           ),
         ),
     ],

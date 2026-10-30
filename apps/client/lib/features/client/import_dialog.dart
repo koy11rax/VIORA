@@ -17,6 +17,7 @@ class ImportDialog extends StatefulWidget {
 class _ImportDialogState extends State<ImportDialog> {
   final input = TextEditingController();
   VlessProfile? preview;
+  ImportedConnection? parsedImport;
   String? error;
   bool busy = false;
   bool subscription = false;
@@ -30,6 +31,7 @@ class _ImportDialogState extends State<ImportDialog> {
 
   void validate(String value, {bool fromSource = false}) {
     VlessProfile? parsed;
+    ImportedConnection? imported;
     var isSubscription = false;
     String? problem;
     if (value.trim().isNotEmpty) {
@@ -38,7 +40,19 @@ class _ImportDialogState extends State<ImportDialog> {
           subscriptionUri(value);
           isSubscription = true;
         } else {
-          parsed = VlessProfile.parse(value);
+          if (value.trim().contains('://') &&
+              !value.trim().contains('\n') &&
+              !value.trim().startsWith('{')) {
+            parsed = VlessProfile.parse(value);
+            imported = ImportedConnection([parsed]);
+          } else {
+            final decoded = decodeSubscriptionDetailed(value);
+            imported = ImportedConnection(
+              decoded.profiles,
+              unsupportedCount: decoded.unsupportedCount,
+            );
+            parsed = imported.profiles.first;
+          }
         }
       } on FormatException catch (e) {
         problem = e.message;
@@ -48,6 +62,7 @@ class _ImportDialogState extends State<ImportDialog> {
     }
     setState(() {
       preview = parsed;
+      parsedImport = imported;
       subscription = isSubscription;
       error = problem;
     });
@@ -55,7 +70,7 @@ class _ImportDialogState extends State<ImportDialog> {
 
   Future<void> submit() async {
     if (!subscription) {
-      Navigator.pop(context, ImportedConnection([preview!]));
+      Navigator.pop(context, parsedImport);
       return;
     }
     setState(() {
@@ -88,6 +103,31 @@ class _ImportDialogState extends State<ImportDialog> {
     } catch (_) {
       if (mounted) {
         setState(() => error = 'Буфер недоступен. Вставь ссылку вручную.');
+      }
+    }
+  }
+
+  Future<void> configurationFile() async {
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Подписка',
+            extensions: ['txt', 'yaml', 'yml', 'json'],
+          ),
+        ],
+      );
+      if (file == null || !mounted) return;
+      if (await file.length() > 1048576) {
+        throw const FormatException('Подписка слишком большая');
+      }
+      final content = await file.readAsString();
+      if (mounted) accept(content);
+    } on FormatException catch (e) {
+      if (mounted) setState(() => error = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => error = 'Не удалось прочитать файл подписки.');
       }
     }
   }
@@ -264,6 +304,13 @@ class _ImportDialogState extends State<ImportDialog> {
                 image,
               ),
               const SizedBox(height: 22),
+              action(
+                Icons.file_open_outlined,
+                'Из файла подписки',
+                'TXT, Clash YAML или sing-box JSON',
+                configurationFile,
+              ),
+              const SizedBox(height: 14),
               Text(
                 'ИЛИ ДОБАВЬ ССЫЛКУ ВРУЧНУЮ',
                 style: TextStyle(
@@ -277,16 +324,16 @@ class _ImportDialogState extends State<ImportDialog> {
                 controller: input,
                 minLines: 2,
                 maxLines: 4,
-                maxLength: 16384,
+                maxLength: 1048576,
                 autocorrect: false,
                 enableSuggestions: false,
                 keyboardType: TextInputType.multiline,
                 enabled: !busy,
                 onChanged: validate,
                 decoration: InputDecoration(
-                  hintText: 'https://… или vless://…',
+                  hintText: 'https://… или hy2://… / vless://…',
                   counterText: '',
-                  labelText: 'Ссылка из бота или на сервер',
+                  labelText: 'Подписка или подключение',
                   errorText: error,
                   errorMaxLines: 4,
                   suffixIcon: input.text.isEmpty
@@ -329,9 +376,17 @@ class _ImportDialogState extends State<ImportDialog> {
                               ),
                             ),
                             Text(
-                              'VLESS · ${preview!.transport.toUpperCase()} · ${preview!.security.toUpperCase()}',
+                              preview!.displayLabel,
                               style: const TextStyle(fontSize: 12),
                             ),
+                            if ((parsedImport?.profiles.length ?? 0) > 1)
+                              Text(
+                                'Серверов: ${parsedImport!.profiles.length}',
+                              ),
+                            if ((parsedImport?.unsupportedCount ?? 0) > 0)
+                              Text(
+                                'Несовместимых записей: ${parsedImport!.unsupportedCount}',
+                              ),
                           ],
                         ),
                       ),
@@ -356,7 +411,7 @@ class _ImportDialogState extends State<ImportDialog> {
                               camera
                           ? 'Загрузим серверы из бота. Это устройство передаст HWID и займёт один слот подписки Viora.'
                           : 'Загрузим список серверов по ссылке подписки. Вход через Telegram не требуется.')
-                    : 'Вставь ссылку подписки из бота или отдельного сервера VLESS. Привязка Telegram не требуется.',
+                    : 'Поддерживаются VLESS, VMess, Trojan, Shadowsocks и Hysteria2. Привязка Telegram не требуется.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
               ),
@@ -397,7 +452,7 @@ class _ScanPageState extends State<_ScanPage> {
       } on FormatException {
         setState(
           () => message =
-              'В этом QR нет ссылки подписки HTTPS или сервера VLESS.',
+              'В этом QR нет поддерживаемой подписки HTTPS или ссылки сервера.',
         );
       }
     }

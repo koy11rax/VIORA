@@ -36,6 +36,41 @@ func TestLinuxUnderlayPinsInterfaceMarkAndObservesChange(t *testing.T) {
 	}
 }
 
+func TestBindAllProxyProtocolsToObservedLinuxUnderlay(t *testing.T) {
+	for _, protocol := range []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria"} {
+		t.Run(protocol, func(t *testing.T) {
+			config := cleanProtocolFixture(t, protocol)
+			server, err := proxyEndpoint(proxyMap(config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			server["address"] = "192.0.2.20"
+			identity := linuxOutboundSnapshot{index: 2, name: "eth0", hardware: "fixture", addresses: []netip.Addr{netip.MustParseAddr("192.0.2.2")}}
+			deps := linuxOutboundDependencies{route: func(address netip.Addr) (int, error) {
+				if address.String() != "192.0.2.20" {
+					t.Fatal("wrong peer address")
+				}
+				return 2, nil
+			}, iface: func(int) (linuxOutboundSnapshot, error) { return identity, nil }}
+			check, err := bindLinuxOutboundWith(config, deps)
+			if err != nil || check == nil || !check() {
+				t.Fatal("proxy underlay binding failed", err)
+			}
+			options := proxyMap(config)["streamSettings"].(map[string]any)["sockopt"].(map[string]any)
+			if options["interface"] != "eth0" || options["mark"] != protectionMark {
+				t.Fatal("missing verified interface/mark binding")
+			}
+			if _, _, err := buildPlatformBridge(config, 31081, "fixture-user", "fixture-password-with-at-least-16-bytes"); err != nil {
+				t.Fatal("native bridge rejected protocol", err)
+			}
+			identity.name = "changed0"
+			if check() {
+				t.Fatal("underlay loss accepted")
+			}
+		})
+	}
+}
+
 func TestLinuxUnderlayFailsWithoutMutatingInput(t *testing.T) {
 	for _, bad := range []string{"no-route", "down", "viora0", "lo", "too-long-interface-name"} {
 		t.Run(bad, func(t *testing.T) {

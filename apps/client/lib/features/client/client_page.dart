@@ -401,7 +401,8 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   ) {
     final compatible = <String, VlessProfile>{
       for (final profile in imported)
-        if (profile.transport == previous.transport &&
+        if (profile.protocol == previous.protocol &&
+            profile.transport == previous.transport &&
             profile.security == previous.security)
           profile.toShareLink(): profile,
     }.values.toList();
@@ -490,7 +491,8 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     state.onChanged?.call();
     if (!silent) {
       notice(
-        'Добавлено серверов: ${value.profiles.length}. Можно включать VPN.',
+        'Добавлено серверов: ${value.profiles.length}.'
+        '${value.unsupportedCount > 0 ? ' Пропущено несовместимых: ${value.unsupportedCount}.' : ''}',
       );
     }
     return true;
@@ -558,6 +560,12 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
               : 'Нет ответа тестового сайта через VPN. Проверь другой сервер; этот сайт также может быть недоступен отдельно.',
         );
       } else {
+        if (profile.protocol == 'hysteria2') {
+          notice(
+            'Hysteria2 работает через UDP. Для проверки передачи данных подключи VPN и повтори тест.',
+          );
+          return;
+        }
         final value = await (widget.measureLatency ?? measureServerLatency)(
           profile.host,
           profile.port,
@@ -899,15 +907,13 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.dns_outlined),
                     title: Text(p.name),
-                    subtitle: Text(
-                      'VLESS · ${p.transport.toUpperCase()} · ${p.security.toUpperCase()}',
-                    ),
+                    subtitle: Text(p.displayLabel),
                   ),
                 ),
               if (widget.state.profiles.isEmpty)
                 const VioraPanel(
                   child: Text(
-                    'Серверы ещё не добавлены. Вставь ссылку VLESS или позже подключи подписку Viora.',
+                    'Добавь подписку любого совместимого провайдера или ссылку сервера.',
                   ),
                 ),
               FilledButton.icon(

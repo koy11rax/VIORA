@@ -7,11 +7,9 @@ License: LGPL-3.0 (LICENSE retained).
 
 The baseline .go files, go.mod and go.sum were copied from that commit, with
 the additional viora_protector.go bridge. It registers Android socket
-protection using the core's system dialer controller. The bridge returns a
-protection error, but the vendored upstream dialer logs controller errors and
-continues dialing; rejection of the dial is not guaranteed. VIORA normally
-excludes its own UID from the VPN, but protect-failure handling remains a known
-limitation requiring a native-core change and dedicated runtime verification.
+protection using the core's system dialer controller. The 1.1.0 build applies
+the reviewed TCP/UDP controller overlay described below, so a rejected
+protector aborts the dial. The retained vendor source is the upstream baseline.
 It does not add DNS, TLS, routing or implicit bypass configuration.
 
 Core: github.com/xtls/xray-core
@@ -73,3 +71,23 @@ GHSA-259r-337f-4rfw affects compress/s2.NewDict and Dict.Encode. The locked
 compress module is version1.18.2, but its s2 package is absent from the Android
 vendor/runtime import set; this application uses zstd through uTLS. No blanket
 module upgrade was applied for this unreachable advisory.
+
+## VIORA 1.1.0 — TCP/UDP protector rejection
+
+`patches/xray-android/system_dialer.go` changes the two controller loops to
+return errors instead of logging and continuing after `VpnService.protect`
+rejection. The build script checks the upstream base SHA-256, stages isolated
+bridge/Xray copies and applies a Go overlay there. Shared module caches and
+tracked dependency files are not mutated. Hysteria2 is already present in the
+same locked Xray source; its UDP sockets follow this protected dial path.
+
+Go 1.27.3 / API 26 / NDK 27.0.12077973 produced the three-ABI AAR SHA-256
+`8571167d3afc4df1dd7507226b7091561d709a5eb09d23064823f7484146643f`.
+The build's focused TCP and UDP protector rejection regression passed. After
+checks resumed, all 20 local protocol TCP/UDP payload round-trips and seven
+negative TLS/credential cases passed in `tests/android-protocols`. The initial
+fixture timeouts were traced to Xray freedom's default private-target blocking;
+the fixture now permits only its ephemeral loopback echo endpoints. Production
+policy was not weakened. These host-side source tests do not establish a real
+Android VpnService/TUN or prove live remote VPN behavior. Existing old AAR
+digests above are historical only.

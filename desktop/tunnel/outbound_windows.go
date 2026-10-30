@@ -53,20 +53,12 @@ func bindDesktopOutboundWith(config map[string]any, deps desktopOutboundDependen
 		return nil, errors.New("outbound interface config invalid")
 	}
 	proxy, ok := outbounds[0].(map[string]any)
-	if !ok || proxy["protocol"] != "vless" {
+	if !ok {
 		return nil, errors.New("outbound interface proxy invalid")
 	}
-	settings, ok := proxy["settings"].(map[string]any)
-	if !ok {
-		return nil, errors.New("outbound interface settings invalid")
-	}
-	servers, ok := settings["vnext"].([]any)
-	if !ok || len(servers) != 1 {
-		return nil, errors.New("outbound interface endpoint invalid")
-	}
-	server, ok := servers[0].(map[string]any)
-	if !ok {
-		return nil, errors.New("outbound interface endpoint invalid")
+	server, err := proxyEndpoint(proxy)
+	if err != nil {
+		return nil, err
 	}
 	address, ok := server["address"].(string)
 	if !ok {

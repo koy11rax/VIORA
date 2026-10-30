@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -74,92 +73,28 @@ func sanitizeConfig(data []byte) (map[string]any, error) {
 	if mtu != 1280 && mtu != 1420 && mtu != 1500 {
 		return nil, invalidConfig
 	}
-	var outbounds []struct {
-		Tag      string `json:"tag"`
-		Protocol string `json:"protocol"`
-		Settings struct {
-			Vnext []struct {
-				Address string `json:"address"`
-				Port    int    `json:"port"`
-				Users   []struct {
-					ID         string `json:"id"`
-					Encryption string `json:"encryption"`
-					Flow       string `json:"flow,omitempty"`
-					Level      int    `json:"level"`
-				} `json:"users"`
-			} `json:"vnext"`
-		} `json:"settings"`
-		Stream struct {
-			Network  string `json:"network"`
-			Security string `json:"security"`
-			TLS      *struct {
-				ServerName  string   `json:"serverName"`
-				Fingerprint string   `json:"fingerprint"`
-				ALPN        []string `json:"alpn,omitempty"`
-			} `json:"tlsSettings,omitempty"`
-			Reality *struct {
-				ServerName  string `json:"serverName"`
-				Fingerprint string `json:"fingerprint"`
-				Password    string `json:"password"`
-				ShortID     string `json:"shortId"`
-				SpiderX     string `json:"spiderX,omitempty"`
-			} `json:"realitySettings,omitempty"`
-			WS *struct {
-				Path    string            `json:"path"`
-				Headers map[string]string `json:"headers,omitempty"`
-			} `json:"wsSettings,omitempty"`
-			XHTTP *struct {
-				Path string `json:"path"`
-				Mode string `json:"mode"`
-				Host string `json:"host,omitempty"`
-			} `json:"xhttpSettings,omitempty"`
-		} `json:"streamSettings"`
-	}
+	var outbounds []json.RawMessage
 	if json.Unmarshal(raw["outbounds"], &outbounds) != nil || (len(outbounds) != 3 && len(outbounds) != 4) {
 		return nil, invalidConfig
 	}
-	if outbounds[1].Tag != "direct" || outbounds[1].Protocol != "freedom" || outbounds[2].Tag != "block" || outbounds[2].Protocol != "blackhole" {
-		return nil, invalidConfig
-	}
-	if len(outbounds) == 4 && (outbounds[3].Tag != "dns-out" || outbounds[3].Protocol != "dns") {
-		return nil, invalidConfig
-	}
-	p := outbounds[0]
-	if p.Tag != "proxy" || p.Protocol != "vless" || len(p.Settings.Vnext) != 1 {
-		return nil, invalidConfig
-	}
-	server := p.Settings.Vnext[0]
-	host := regexp.MustCompile(`^[A-Za-z0-9._:-]{1,253}$`)
-	if !host.MatchString(server.Address) || server.Port < 1 || server.Port > 65535 || len(server.Users) != 1 {
-		return nil, invalidConfig
-	}
-	user := server.Users[0]
-	if !regexp.MustCompile(`^[a-fA-F0-9-]{36}$`).MatchString(user.ID) || user.Encryption != "none" {
-		return nil, invalidConfig
-	}
-	if user.Flow != "" && user.Flow != "xtls-rprx-vision" {
-		return nil, invalidConfig
-	}
-	if p.Stream.Security != "tls" && p.Stream.Security != "reality" {
-		return nil, invalidConfig
-	}
-	if p.Stream.Security == "tls" && (p.Stream.TLS == nil || !host.MatchString(p.Stream.TLS.ServerName)) {
-		return nil, invalidConfig
-	}
-	if p.Stream.Security == "reality" && (p.Stream.Reality == nil || !host.MatchString(p.Stream.Reality.ServerName) || !regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`).MatchString(p.Stream.Reality.Password)) {
-		return nil, invalidConfig
-	}
-	switch p.Stream.Network {
-	case "raw":
-	case "ws":
-		if p.Stream.WS == nil {
+	for index, value := range outbounds[1:] {
+		var row struct{ Tag, Protocol string }
+		if json.Unmarshal(value, &row) != nil {
 			return nil, invalidConfig
 		}
-	case "xhttp":
-		if p.Stream.XHTTP == nil {
+		wantTag, wantProtocol := "direct", "freedom"
+		if index == 1 {
+			wantTag, wantProtocol = "block", "blackhole"
+		}
+		if index == 2 {
+			wantTag, wantProtocol = "dns-out", "dns"
+		}
+		if row.Tag != wantTag || row.Protocol != wantProtocol {
 			return nil, invalidConfig
 		}
-	default:
+	}
+	p, err := sanitizeProxy(outbounds[0])
+	if err != nil {
 		return nil, invalidConfig
 	}
 	var routing struct {

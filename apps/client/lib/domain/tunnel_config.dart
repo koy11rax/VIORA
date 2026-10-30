@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'profile.dart';
+import 'protocol_outbound.dart';
 import 'routing.dart';
 import 'russian_services.dart';
 import 'desktop_applications.dart';
@@ -58,50 +59,6 @@ class TunnelConfig {
     }
     if (![1280, 1420, 1500].contains(mtu)) {
       throw const FormatException('Некорректный MTU');
-    }
-    final p = profile.parameters;
-    final stream = <String, dynamic>{
-      'network': profile.transport == 'tcp' ? 'raw' : profile.transport,
-      'security': profile.security,
-    };
-    if (profile.security == 'reality') {
-      if (!RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(p['pbk'] ?? '') ||
-          !RegExp(r'^(?:[a-fA-F0-9]{2}){0,8}$').hasMatch(p['sid'] ?? '')) {
-        throw const FormatException('Проверь ключ REALITY и Short ID');
-      }
-      stream['realitySettings'] = {
-        'serverName': p['sni'],
-        'fingerprint': p['fp'] ?? 'chrome',
-        'password': p['pbk'],
-        'shortId': p['sid'] ?? '',
-        if ((p['spx'] ?? '').isNotEmpty) 'spiderX': p['spx'],
-      };
-    } else {
-      stream['tlsSettings'] = {
-        'serverName': p['sni'] ?? p['host'] ?? profile.host,
-        'fingerprint': p['fp'] ?? 'chrome',
-        if ((p['alpn'] ?? '').isNotEmpty) 'alpn': p['alpn']!.split(','),
-      };
-    }
-    if (profile.transport == 'ws') {
-      stream['wsSettings'] = {
-        'path': p['path'] ?? '/',
-        if ((p['host'] ?? '').isNotEmpty) 'headers': {'Host': p['host']},
-      };
-    } else if (profile.transport == 'xhttp') {
-      if (![
-        'auto',
-        'packet-up',
-        'stream-up',
-        'stream-one',
-      ].contains(p['mode'] ?? 'auto')) {
-        throw const FormatException('Неподдерживаемый режим XHTTP');
-      }
-      stream['xhttpSettings'] = {
-        'path': p['path'] ?? '/',
-        'mode': p['mode'] ?? 'auto',
-        if ((p['host'] ?? '').isNotEmpty) 'host': p['host'],
-      };
     }
     final routing = <Map<String, dynamic>>[
       // Defense in depth: Android blocks the unsupported IPv6 family as well.
@@ -182,27 +139,7 @@ class TunnelConfig {
           },
         ],
         'outbounds': [
-          {
-            'tag': 'proxy',
-            'protocol': 'vless',
-            'settings': {
-              'vnext': [
-                {
-                  'address': profile.host,
-                  'port': profile.port,
-                  'users': [
-                    {
-                      'id': profile.uuid,
-                      'encryption': 'none',
-                      'level': 8,
-                      if ((p['flow'] ?? '').isNotEmpty) 'flow': p['flow'],
-                    },
-                  ],
-                },
-              ],
-            },
-            'streamSettings': stream,
-          },
+          protocolOutbound(profile),
           {
             'tag': 'direct',
             'protocol': 'freedom',

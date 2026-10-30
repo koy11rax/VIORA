@@ -73,7 +73,153 @@ class Client implements HttpClient {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class RedirectClient implements HttpClient {
+  final List<Response> responses;
+  final requests = <Request>[];
+  final urls = <Uri>[];
+  bool closed = false;
+  @override
+  Duration? connectionTimeout;
+  RedirectClient(this.responses);
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    urls.add(url);
+    final request = Request(responses[requests.length]);
+    requests.add(request);
+    return request;
+  }
+
+  @override
+  void close({bool force = false}) {
+    closed = true;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  test(
+    'HTTPS redirect uses a new request without forwarding device identity',
+    () async {
+      final redirect = Response('', statusCode: 302);
+      redirect.headers.set(
+        'location',
+        'https://cdn.example.invalid/sub/fixture',
+      );
+      final client = RedirectClient([redirect, Response(link)]);
+      final result = await SubscriptionImporter(
+        createClient: () => client,
+        operatingSystem: 'android',
+        identity: () async => 'fixture-device',
+      ).load('https://vpnfn2345.duckdns.org/sub/fixture');
+      expect(client.urls.map((uri) => uri.host), [
+        'vpnfn2345.duckdns.org',
+        'cdn.example.invalid',
+      ]);
+      expect(client.requests.first.headers.value('x-hwid'), 'fixture-device');
+      expect(client.requests.last.headers.value('x-hwid'), isNull);
+      expect(client.requests.last.headers.value('x-device-os'), isNull);
+      expect(
+        client.requests.every((request) => !request.followRedirects),
+        isTrue,
+      );
+      expect(result.source, 'https://vpnfn2345.duckdns.org/sub/fixture');
+      expect(client.closed, isTrue);
+    },
+  );
+  test(
+    'foreign subscriptions cannot trigger identity reads by redirecting to Viora',
+    () async {
+      final redirect = Response('', statusCode: 302);
+      redirect.headers.set(
+        'location',
+        'https://vpnfn2345.duckdns.org/sub/fixture',
+      );
+      final client = RedirectClient([redirect, Response(link)]);
+      var reads = 0;
+      await SubscriptionImporter(
+        createClient: () => client,
+        operatingSystem: 'android',
+        identity: () async {
+          reads++;
+          return 'fixture';
+        },
+      ).load('https://example.invalid/sub/fixture');
+      expect(reads, 0);
+      expect(
+        client.requests.every(
+          (request) => request.headers.value('x-hwid') == null,
+        ),
+        isTrue,
+      );
+    },
+  );
+  test(
+    'redirects reject HTTPS downgrades, embedded credentials, loops and excess hops',
+    () async {
+      for (final target in [
+        'http://example.invalid/sub/fixture',
+        'https://user:private-secret@example.invalid/sub/fixture',
+        '/sub/fixture',
+      ]) {
+        final redirect = Response('', statusCode: 302);
+        redirect.headers.set('location', target);
+        final client = RedirectClient([redirect]);
+        await expectLater(
+          SubscriptionImporter(
+            createClient: () => client,
+          ).load('https://example.invalid/sub/fixture'),
+          throwsA(
+            isA<FormatException>()
+                .having((error) => error.source, 'source', isNull)
+                .having(
+                  (error) => error.toString(),
+                  'public error',
+                  isNot(contains('private-secret')),
+                ),
+          ),
+        );
+        expect(client.requests, hasLength(1));
+        expect(client.closed, isTrue);
+      }
+      final client = RedirectClient(
+        List.generate(4, (index) {
+          final response = Response('', statusCode: 307);
+          response.headers.set('location', '/sub/hop${index + 1}');
+          return response;
+        }),
+      );
+      await expectLater(
+        SubscriptionImporter(
+          createClient: () => client,
+        ).load('https://example.invalid/sub/fixture'),
+        throwsFormatException,
+      );
+      expect(client.requests, hasLength(4));
+      expect(client.closed, isTrue);
+    },
+  );
+  test(
+    'foreign mixed-protocol responses report omissions and retain the original refresh URL',
+    () async {
+      final client = Client(
+        Response(
+          '$link\nhy2://fixture@example.invalid:443\ntuic://fixture@example.invalid:443',
+        ),
+      );
+      final result = await SubscriptionImporter(
+        createClient: () => client,
+      ).load('https://example.invalid/sub/fixture');
+      expect(result.profiles.map((profile) => profile.protocol), [
+        'vless',
+        'hysteria2',
+      ]);
+      expect(result.unsupportedCount, 1);
+      expect(result.warnings, hasLength(1));
+      expect(result.source, 'https://example.invalid/sub/fixture');
+    },
+  );
   test(
     'known percent-encoded revoked placeholders have a fixed actionable reason',
     () {

@@ -171,7 +171,7 @@ public final class V2rayCoreManager {
                     if (v2rayServicesListener != null) {
                         return v2rayServicesListener.onProtect((int) fd);
                     }
-                    return true;
+                    return false;
                 }
             });
             // Initialize controller with callback handler

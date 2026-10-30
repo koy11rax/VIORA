@@ -2,10 +2,11 @@ param(
     [string]$SigningDirectory = "$env:USERPROFILE\.codex\signing\viora",
     [string]$JavaHome = 'D:\Android Studio\jbr',
     [string]$AndroidSdk = "$env:LOCALAPPDATA\Android\Sdk",
-    [string]$VersionName = '1.0.5',
-    [int]$VersionCode = 35,
+    [string]$VersionName = '1.1.0',
+    [int]$VersionCode = 36,
     [switch]$InitializeKey,
-    [switch]$UseGoogleMirror
+    [switch]$UseGoogleMirror,
+    [switch]$SkipVerification
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
@@ -56,14 +57,17 @@ try {
     $env:VIORA_ANDROID_STORE_PASSWORD = [Text.Encoding]::UTF8.GetString($secret)
     $env:VIORA_ANDROID_KEY_PASSWORD = $env:VIORA_ANDROID_STORE_PASSWORD
     $argsList = @('-p', "$repo\apps\client\android", 'assembleRelease', '-Ptarget=lib/main.dart', "-PvioraVersionName=$VersionName", "-PvioraVersionCode=$VersionCode", '--console=plain', '--max-workers=4')
+    if ($SkipVerification) { $argsList += @('-x', 'lintVitalRelease', '-x', 'lintVitalAnalyzeRelease', '-x', 'lintVitalReportRelease') }
     if ($UseGoogleMirror) { $argsList += @('-I', "$repo\scripts\android-google-mirror.init.gradle") }
     & "$repo\apps\client\android\gradlew.bat" @argsList
     if ($LASTEXITCODE -ne 0) { throw 'Android release build failed.' }
     $apksigner = Get-ChildItem -LiteralPath "$AndroidSdk\build-tools" -Filter apksigner.bat -Recurse |
         Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
     if (!$apksigner) { throw 'Android SDK apksigner was not found.' }
-    & $apksigner verify --verbose --print-certs "$repo\apps\client\build\app\outputs\apk\release\app-release.apk"
-    if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
+    if (!$SkipVerification) {
+        & $apksigner verify --verbose --print-certs "$repo\apps\client\build\app\outputs\apk\release\app-release.apk"
+        if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
+    }
     $destination = "$repo\artifacts\Viora-Android-$VersionName-release.apk"
     Copy-Item -LiteralPath "$repo\apps\client\build\app\outputs\apk\release\app-release.apk" -Destination $destination
     & $keytool -exportcert -rfc -keystore $profile.keyPath -alias $profile.alias -storepass:env VIORA_ANDROID_STORE_PASSWORD -file "$SigningDirectory\android-release-public.pem"

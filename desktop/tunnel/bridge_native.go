@@ -20,7 +20,7 @@ import (
 )
 
 // Desktop has two narrowly scoped engines: sing-box owns the system TUN,
-// while Xray owns only authenticated local SOCKS and the existing VLESS transport.
+// while Xray owns authenticated local SOCKS and validated proxy transports.
 // Neither configuration is written to disk or passed in a process argument.
 func runPlatformBridge(parent context.Context, config map[string]any, directory string, protected bool, emit func(status), diagnostics *sessionDiagnostics) bool {
 	fail := func(code string) { emit(bridgeFailureStatus(parent.Err() != nil, code)) }

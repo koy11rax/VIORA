@@ -17,7 +17,7 @@ var invalidWindowsBridge = errors.New("invalid desktop bridge configuration")
 
 // buildDesktopBridge is pure. The caller supplies a sanitized configuration
 // after numeric endpoint bootstrap and trusted native interface selection.
-// Xray owns only VLESS transport; sing-box owns the system TUN.
+// Xray owns only validated proxy transports; sing-box owns the system TUN.
 func buildDesktopBridge(config map[string]any, port uint16, user, password string) (map[string]any, map[string]any, error) {
 	if port == 0 || !bridgeCredential(user, 1) || !bridgeCredential(password, 16) {
 		return nil, nil, invalidWindowsBridge
@@ -31,19 +31,11 @@ func buildDesktopBridge(config map[string]any, port uint16, user, password strin
 		return nil, nil, invalidWindowsBridge
 	}
 	proxy, ok := out[0].(map[string]any)
-	if !ok || proxy["tag"] != "proxy" || proxy["protocol"] != "vless" {
+	if !ok || proxy["tag"] != "proxy" {
 		return nil, nil, invalidWindowsBridge
 	}
-	settings, ok := proxy["settings"].(map[string]any)
-	if !ok {
-		return nil, nil, invalidWindowsBridge
-	}
-	servers, ok := settings["vnext"].([]any)
-	if !ok || len(servers) != 1 {
-		return nil, nil, invalidWindowsBridge
-	}
-	server, ok := servers[0].(map[string]any)
-	if !ok {
+	server, err := proxyEndpoint(proxy)
+	if err != nil {
 		return nil, nil, invalidWindowsBridge
 	}
 	endpoint, ok := server["address"].(string)
@@ -85,7 +77,7 @@ func buildDesktopBridge(config map[string]any, port uint16, user, password strin
 		}
 		switch tag {
 		case "proxy":
-			if protocol != "vless" {
+			if !oneOf(protocol, "vless", "vmess", "trojan", "shadowsocks", "hysteria") {
 				return nil, nil, invalidWindowsBridge
 			}
 		case "direct":

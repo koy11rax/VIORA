@@ -39,20 +39,12 @@ func bindLinuxOutboundWith(config map[string]any, deps linuxOutboundDependencies
 		return nil, errors.New("missing outbound")
 	}
 	proxy, ok := outs[0].(map[string]any)
-	if !ok || proxy["protocol"] != "vless" {
+	if !ok {
 		return nil, errors.New("invalid outbound")
 	}
-	settings, ok := proxy["settings"].(map[string]any)
-	if !ok {
-		return nil, errors.New("invalid settings")
-	}
-	servers, ok := settings["vnext"].([]any)
-	if !ok || len(servers) != 1 {
-		return nil, errors.New("invalid endpoint")
-	}
-	server, ok := servers[0].(map[string]any)
-	if !ok {
-		return nil, errors.New("invalid endpoint")
+	server, err := proxyEndpoint(proxy)
+	if err != nil {
+		return nil, err
 	}
 	address, ok := server["address"].(string)
 	if !ok {

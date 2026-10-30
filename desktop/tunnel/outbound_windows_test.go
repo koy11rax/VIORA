@@ -85,6 +85,32 @@ func TestBindDesktopOutboundPreservesProtocolAndProtection(t *testing.T) {
 	}
 }
 
+func TestBindAllProxyProtocolsToObservedWindowsUnderlay(t *testing.T) {
+	for _, protocol := range []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria"} {
+		t.Run(protocol, func(t *testing.T) {
+			config := cleanProtocolFixture(t, protocol)
+			server, err := proxyEndpoint(proxyMap(config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			server["address"] = "192.0.2.20"
+			state := newOutboundTestState()
+			check, err := bindDesktopOutboundWith(config, state.dependencies())
+			if err != nil || check == nil || !check() {
+				t.Fatal("proxy underlay binding failed", err)
+			}
+			options := proxyMap(config)["streamSettings"].(map[string]any)["sockopt"].(map[string]any)
+			if options["interface"] != state.iface.Name {
+				t.Fatal("missing verified interface binding")
+			}
+			state.adapters[0].up = false
+			if check() {
+				t.Fatal("underlay loss accepted")
+			}
+		})
+	}
+}
+
 func TestBindDesktopOutboundStrictHasNoNewDirectRoute(t *testing.T) {
 	config := outboundFixture()
 	restrictDirect(config)

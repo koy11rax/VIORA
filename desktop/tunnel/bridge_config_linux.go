@@ -24,7 +24,10 @@ func buildPlatformBridge(config map[string]any, port uint16, user, password stri
 	if len(interfaceName) >= 16 || strings.ContainsAny(interfaceName, "/:\t ") {
 		return nil, nil, invalidWindowsBridge
 	}
-	server := proxy["settings"].(map[string]any)["vnext"].([]any)[0].(map[string]any)
+	server, err := proxyEndpoint(proxy)
+	if err != nil {
+		return nil, nil, invalidWindowsBridge
+	}
 	endpoint, err := netip.ParseAddr(server["address"].(string))
 	if err != nil || !endpoint.Is4() || endpoint.IsUnspecified() || endpoint.IsLoopback() || endpoint.IsMulticast() {
 		return nil, nil, invalidWindowsBridge

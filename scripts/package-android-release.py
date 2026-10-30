@@ -31,6 +31,7 @@ roots = [
     'third_party/flutter_v2ray_client/lib',
     'third_party/flutter_v2ray_client/android/src',
     'third_party/androidlibxraylite',
+    'patches/xray-android', 'tests/android-protocols',
 ]
 names = [
     'apps/client/pubspec.yaml', 'apps/client/pubspec.lock',
@@ -49,6 +50,7 @@ names = [
     'scripts/build-android-release.ps1', 'scripts/android-google-mirror.init.gradle',
     'scripts/package-android-release.py', 'scripts/package-android-core-source.py',
     'scripts/test-dns-forwarding.py', 'docs/android-source-build.md',
+    'desktop/tunnel/testdata/export_protocol_fixtures.dart',
     'docs/android-user-guide.md', f'docs/android-release-{version}.md',
     f'docs/android-release-notes-{version}.md',
 ]

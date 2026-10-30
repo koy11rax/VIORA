@@ -5,13 +5,15 @@ import hashlib
 import zipfile
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='0.7.4')
+parser.add_argument('--version', default='1.1.0')
 version = parser.parse_args().version
 if not version or any(c not in '0123456789.' for c in version):
     raise ValueError('Invalid version')
 repo = Path(__file__).resolve().parent.parent
 destination = repo / 'artifacts' / f'Viora-Android-{version}-core-source.zip'
 roots = [repo / 'third_party/androidlibxraylite',
+         repo / 'patches/xray-android',
+         repo / 'tests/android-protocols',
          repo / 'third_party/flutter_v2ray_client/android/src',
          repo / 'apps/client/assets/licenses']
 files = [repo / 'scripts/build-android-core.ps1',

@@ -114,7 +114,10 @@ func resolveEndpoint(parent context.Context, config map[string]any, allowSystem 
 
 func resolveEndpointWith(parent context.Context, config map[string]any, allowSystem bool, dependencies endpointDependencies) error {
 	outbound := proxyMap(config)
-	server := outbound["settings"].(map[string]any)["vnext"].([]any)[0].(map[string]any)
+	server, endpointErr := proxyEndpoint(outbound)
+	if endpointErr != nil {
+		return endpointErr
+	}
 	host := server["address"].(string)
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.To4() == nil {

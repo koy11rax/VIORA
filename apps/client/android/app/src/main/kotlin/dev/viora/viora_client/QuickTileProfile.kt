@@ -5,6 +5,7 @@ import android.net.VpnService
 import dev.amirzr.flutter_v2ray_client.v2ray.V2rayController
 import dev.amirzr.flutter_v2ray_client.v2ray.utils.AppConfigs
 import dev.amirzr.flutter_v2ray_client.v2ray.utils.Utilities
+import dev.amirzr.flutter_v2ray_client.v2ray.utils.OutboundEndpoint
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -151,7 +152,7 @@ class QuickTileProfile(context: Context) {
             return parse(values)
         }
 
-        private fun validateConfig(config: String, mtu: Int) {
+        internal fun validateConfig(config: String, mtu: Int) {
             try {
                 // Check nesting before JSONObject's recursive parser can consume it.
                 var depth = 0
@@ -180,12 +181,28 @@ class QuickTileProfile(context: Context) {
                 requireProfile(inbound.getJSONObject("settings").getInt("MTU") == mtu)
                 val outbounds = json.getJSONArray("outbounds")
                 requireProfile(outbounds.length() == 4)
-                for ((index, pair) in listOf("proxy" to "vless", "direct" to "freedom", "block" to "blackhole", "dns-out" to "dns").withIndex()) {
-                    val outbound = outbounds.getJSONObject(index)
+                val proxy = outbounds.getJSONObject(0)
+                val protocol = proxy.optString("protocol")
+                requireProfile(proxy.optString("tag") == "proxy" && protocol in setOf("vless", "vmess", "trojan", "shadowsocks", "hysteria"))
+                OutboundEndpoint.from(proxy)
+                for ((index, pair) in listOf("direct" to "freedom", "block" to "blackhole", "dns-out" to "dns").withIndex()) {
+                    val outbound = outbounds.getJSONObject(index + 1)
                     requireProfile(outbound.optString("tag") == pair.first && outbound.optString("protocol") == pair.second)
                 }
-                val security = outbounds.getJSONObject(0).getJSONObject("streamSettings").optString("security")
-                requireProfile(security == "tls" || security == "reality")
+                val stream = proxy.optJSONObject("streamSettings")
+                val security = stream?.optString("security", "none") ?: "none"
+                val network = stream?.optString("network", "tcp") ?: "tcp"
+                when (protocol) {
+                    "vless" -> requireProfile(security == "tls" || security == "reality")
+                    "vmess" -> requireProfile(security in setOf("tls", "none") && network in setOf("tcp", "raw", "ws"))
+                    "trojan" -> requireProfile(security == "tls" && network in setOf("tcp", "raw", "ws"))
+                    "shadowsocks" -> requireProfile(security == "none" && network == "tcp")
+                    "hysteria" -> {
+                        requireProfile(security == "tls" && network == "hysteria")
+                        val hysteria = stream!!.getJSONObject("hysteriaSettings")
+                        requireProfile(hysteria.getInt("version") == 2 && hysteria.getString("auth").isNotEmpty())
+                    }
+                }
                 val rules = json.getJSONObject("routing").getJSONArray("rules")
                 requireProfile(rules.length() <= 4096)
                 // Bound nesting and reject TLS bypass options before any native parser sees it.

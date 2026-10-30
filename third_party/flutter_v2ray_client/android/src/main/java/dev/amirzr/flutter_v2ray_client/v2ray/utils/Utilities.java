@@ -180,25 +180,9 @@ public class Utilities {
                 Log.w(V2rayCoreManager.class.getSimpleName(), "startCore warn => can`t find inbound port of socks5 or http.");
                 return null;
             }
-            try {
-                v2rayConfig.CONNECTED_V2RAY_SERVER_ADDRESS = config_json.getJSONArray("outbounds")
-                        .getJSONObject(0).getJSONObject("settings")
-                        .getJSONArray("vnext").getJSONObject(0)
-                        .getString("address");
-                v2rayConfig.CONNECTED_V2RAY_SERVER_PORT = config_json.getJSONArray("outbounds")
-                        .getJSONObject(0).getJSONObject("settings")
-                        .getJSONArray("vnext").getJSONObject(0)
-                        .getString("port");
-            } catch (Exception e) {
-                v2rayConfig.CONNECTED_V2RAY_SERVER_ADDRESS = config_json.getJSONArray("outbounds")
-                        .getJSONObject(0).getJSONObject("settings")
-                        .getJSONArray("servers").getJSONObject(0)
-                        .getString("address");
-                v2rayConfig.CONNECTED_V2RAY_SERVER_PORT = config_json.getJSONArray("outbounds")
-                        .getJSONObject(0).getJSONObject("settings")
-                        .getJSONArray("servers").getJSONObject(0)
-                        .getString("port");
-            }
+            OutboundEndpoint endpoint = OutboundEndpoint.from(config_json.getJSONArray("outbounds").getJSONObject(0));
+            v2rayConfig.CONNECTED_V2RAY_SERVER_ADDRESS = endpoint.address;
+            v2rayConfig.CONNECTED_V2RAY_SERVER_PORT = Integer.toString(endpoint.port);
             try {
                 if (config_json.has("policy")) {
                     config_json.remove("policy");
