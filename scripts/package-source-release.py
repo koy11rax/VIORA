@@ -24,7 +24,7 @@ def digest(path):
 if git('status', '--porcelain').strip():
     raise SystemExit('Commit the reviewed source before packaging')
 head = git('rev-parse', 'HEAD').decode().strip()
-pubspec = git('show', 'HEAD:apps/client/pubspec.yaml').decode()
+pubspec = git('show', 'HEAD:apps/client/pubspec.yaml').decode().replace('\r\n', '\n')
 version = re.search(r'^version: (\d+\.\d+\.\d+)\+(\d+)$', pubspec, re.M)
 if version is None:
     raise SystemExit('Expected explicit release version')
