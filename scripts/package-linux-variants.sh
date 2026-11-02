@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 022
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${VIORA_VERSION:-1.0.5}"
+version="${VIORA_VERSION:-1.1.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 deb="${1:-$root/artifacts/Viora-Linux-$version-amd64.deb}"
 for tool in dpkg-deb rpmbuild makepkg pacman bsdtar fakeroot zstd sha256sum; do

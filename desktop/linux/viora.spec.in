@@ -20,7 +20,7 @@ Requires: glibc >= 2.35
 Recommends: gnome-keyring
 
 %description
-VIORA: VLESS, подписки, Telegram, устройства, выбор программ и маршрутизация.
+VIORA: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, подписки и маршрутизация.
 Собранные Linux-бинарники упакованы без изменения; установка не запускает VPN.
 
 %prep
@@ -55,6 +55,6 @@ systemctl daemon-reload >/dev/null 2>&1 || :
 systemctl daemon-reload >/dev/null 2>&1 || :
 
 %changelog
-* Thu Oct 29 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
-- Linux 1.0.5: shared desktop UI, sing-box TUN and Xray transport.
+* Mon Nov 02 2026 VIORA <koy11rax@users.noreply.github.com> - @VERSION@-1
+- Multi-protocol subscriptions, shared desktop UI, sing-box TUN and Xray transport.
 - Preserve binary hashes, licenses, source archive and upgrade protection.

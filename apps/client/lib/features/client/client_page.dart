@@ -15,6 +15,7 @@ import '../../domain/desktop_applications.dart';
 import '../../main.dart' show VioraPanel;
 import 'approved_content.dart';
 import 'import_dialog.dart';
+import 'subscription_management.dart';
 import '../../platform/tunnel.dart';
 import '../../platform/connection_probe.dart';
 import '../../domain/tunnel_config.dart';
@@ -245,6 +246,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   Timer? _maintenanceTimer;
   Timer? _startupMaintenance;
   bool _maintenanceBusy = false;
+  bool _subscriptionMutationBusy = false;
   String? _refreshedSelection;
   bool _reconcilingRefresh = false, _refreshReconnectSilent = true;
 
@@ -269,7 +271,12 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   Future<void> _reconcileRefreshedSelection() async {
-    if (!mounted || refreshing || _reconcilingRefresh) return;
+    if (!mounted ||
+        refreshing ||
+        _subscriptionMutationBusy ||
+        _reconcilingRefresh) {
+      return;
+    }
     final target = _refreshedSelection;
     if (target == null) return;
     final tunnel = widget.state.tunnel;
@@ -336,6 +343,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   Future<void> _maintain() async {
     if (!mounted ||
         _maintenanceBusy ||
+        _subscriptionOperationsBusy ||
         !widget.state.profilesLoaded ||
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
       return;
@@ -348,7 +356,11 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
           !await state.tunnel.synchronizeNativeStatus()) {
         return;
       }
-      if (!mounted) return;
+      if (!mounted ||
+          !identical(state, widget.state) ||
+          _subscriptionOperationsBusy) {
+        return;
+      }
       if (!state.startupHandled) {
         state.startupHandled = true;
         if (state.options['autoconnect'] == true &&
@@ -387,12 +399,345 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   Future<void> import() async {
-    final value = await showDialog<ImportedConnection>(
-      context: context,
-      builder: (context) => const ImportDialog(),
+    if (_subscriptionOperationsBusy) {
+      notice('Дождись завершения операции с подписками');
+      return;
+    }
+    final state = widget.state;
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      final value = await showDialog<ImportedConnection>(
+        context: context,
+        builder: (context) => const ImportDialog(),
+      );
+      if (value == null || !mounted || !identical(state, widget.state)) return;
+      final before = _selectedLink;
+      if (_commitImport(value)) {
+        _queueSubscriptionReconcile(before, silent: false);
+      }
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
+    if (mounted) await _reconcileRefreshedSelection();
+  }
+
+  bool get _subscriptionOperationsBusy =>
+      refreshing || _subscriptionMutationBusy || _reconcilingRefresh;
+
+  void _queueSubscriptionReconcile(String? before, {required bool silent}) {
+    final after = _selectedLink, tunnel = widget.state.tunnel;
+    if (before != null &&
+        after != before &&
+        (tunnel.running || tunnel.busy) &&
+        tunnel.phase != TunnelPhase.stopping) {
+      _refreshedSelection = after;
+      _refreshReconnectSilent = silent;
+    }
+  }
+
+  Future<void> manageSubscriptions() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SubscriptionManagementPage(
+          entries: () => [
+            for (final source in widget.state.subscriptions.entries)
+              SavedSubscription(source.key, source.value.toSet().length),
+          ],
+          onEdit: editSubscription,
+          onDelete: deleteSubscription,
+          onImport: import,
+          standaloneEntries: () => [
+            for (final profile in widget.state.profiles)
+              if (_isStandalone(widget.state, profile.toShareLink())) profile,
+          ],
+          onEditStandalone: editStandaloneProfile,
+          onDeleteStandalone: deleteStandaloneProfile,
+        ),
+      ),
     );
-    if (value == null || !mounted) return;
-    applyImport(value);
+    if (mounted) setState(() {});
+  }
+
+  bool _sourceStillMatches(
+    ClientState state,
+    String source,
+    List<String> links,
+  ) =>
+      mounted &&
+      identical(widget.state, state) &&
+      state.subscriptions.containsKey(source) &&
+      listEquals(state.subscriptions[source], links);
+
+  Future<bool> editSubscription(String source, String replacement) async {
+    if (_subscriptionOperationsBusy ||
+        !widget.state.subscriptions.containsKey(source)) {
+      notice('Дождись завершения операции и проверь список подписок');
+      return false;
+    }
+    final state = widget.state;
+    String target;
+    try {
+      target = subscriptionUri(replacement).toString();
+    } on FormatException {
+      notice('Укажи корректную HTTPS-ссылку подписки');
+      return false;
+    }
+    if (target != source && state.subscriptions.containsKey(target)) {
+      notice('Эта подписка уже сохранена. Выбери другую ссылку.');
+      return false;
+    }
+    final original = List<String>.of(state.subscriptions[source]!);
+    var changed = false;
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      final value =
+          await (widget.loadSubscription ?? SubscriptionImporter().load)(
+            target,
+          );
+      if (!_sourceStillMatches(state, source, original)) return false;
+      if (value.source != target ||
+          value.profiles.isEmpty ||
+          (target != source && state.subscriptions.containsKey(target))) {
+        notice(
+          'Не удалось заменить подписку. Прежняя ссылка и серверы сохранены.',
+        );
+        return false;
+      }
+      final before = _selectedLink;
+      changed = _commitImport(value, silent: true, replacingSource: source);
+      if (changed) {
+        _queueSubscriptionReconcile(before, silent: false);
+        notice(
+          'Ссылка подписки обновлена. Серверов: ${value.profiles.length}.',
+        );
+      }
+    } on SubscriptionImportException catch (error) {
+      if (mounted && identical(widget.state, state)) {
+        notice(
+          '${SubscriptionImportException(error.reason).message} Прежняя ссылка и серверы сохранены.',
+        );
+      }
+    } catch (_) {
+      if (mounted && identical(widget.state, state)) {
+        notice(
+          'Не удалось загрузить новую подписку. Прежняя ссылка и серверы сохранены.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
+    if (changed && mounted) await _reconcileRefreshedSelection();
+    return changed;
+  }
+
+  Future<bool> _confirmSubscriptionDisconnect(TunnelController tunnel) async {
+    final stopped = Completer<bool>();
+    void observe() {
+      if (stopped.isCompleted) return;
+      if (tunnel.phase == TunnelPhase.disconnected &&
+          tunnel.stats.state == 'DISCONNECTED') {
+        stopped.complete(true);
+      } else if (tunnel.phase == TunnelPhase.failed ||
+          tunnel.phase == TunnelPhase.unavailable) {
+        stopped.complete(false);
+      }
+    }
+
+    tunnel.addListener(observe);
+    try {
+      final operation = tunnel.disconnect().then((_) {
+        observe();
+        return stopped.future;
+      });
+      // A failure may finish early. A successful native acknowledgement must
+      // still wait for the MethodChannel stop call and controller busy flag.
+      final failure = stopped.future.then<bool>(
+        (confirmed) => confirmed ? operation : false,
+      );
+      return await Future.any<bool>([
+        operation,
+        failure,
+      ]).timeout(const Duration(seconds: 6), onTimeout: () => false);
+    } catch (_) {
+      return false;
+    } finally {
+      tunnel.removeListener(observe);
+    }
+  }
+
+  Future<bool> deleteSubscription(String source) async {
+    final state = widget.state, tunnel = widget.state.tunnel;
+    if (_subscriptionOperationsBusy ||
+        tunnel.busy ||
+        !state.subscriptions.containsKey(source)) {
+      notice('Дождись завершения операции и проверь список подписок');
+      return false;
+    }
+    final original = List<String>.of(state.subscriptions[source]!);
+    final selectedBefore = _selectedLink;
+    final otherLinks = state.subscriptions.entries
+        .where((entry) => entry.key != source)
+        .expand((entry) => entry.value)
+        .toSet();
+    final removesSelection =
+        selectedBefore != null &&
+        original.contains(selectedBefore) &&
+        !otherLinks.contains(selectedBefore);
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      if (removesSelection &&
+          (tunnel.running || tunnel.stats.state != 'DISCONNECTED')) {
+        _refreshedSelection = null;
+        final stopped = await _confirmSubscriptionDisconnect(tunnel);
+        if (!_sourceStillMatches(state, source, original)) return false;
+        if (!stopped ||
+            tunnel.phase != TunnelPhase.disconnected ||
+            tunnel.busy ||
+            _selectedLink != selectedBefore) {
+          notice(
+            'Отключение VPN не подтверждено. Подписка и серверы сохранены.',
+          );
+          return false;
+        }
+      }
+      if (!_sourceStillMatches(state, source, original)) return false;
+      final retainedByOthers = state.subscriptions.entries
+          .where((entry) => entry.key != source)
+          .expand((entry) => entry.value)
+          .toSet();
+      final remaining = state.profiles.where((profile) {
+        final link = profile.toShareLink();
+        return !original.contains(link) || retainedByOthers.contains(link);
+      }).toList();
+      final selected = _selectedLink;
+      final retainedLinks = remaining
+          .map((profile) => profile.toShareLink())
+          .toSet();
+      setState(() {
+        state.subscriptions.remove(source);
+        state.profiles
+          ..clear()
+          ..addAll(remaining);
+        state.selectedProfile = remaining.indexWhere(
+          (profile) => profile.toShareLink() == selected,
+        );
+        state.latency.removeWhere((link, _) => !retainedLinks.contains(link));
+      });
+      state.onChanged?.call();
+      notice('Подписка удалена. Другие подключения сохранены.');
+      return true;
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
+  }
+
+  bool _isStandalone(ClientState state, String link) =>
+      state.profiles.any((profile) => profile.toShareLink() == link) &&
+      !state.subscriptions.values.any((links) => links.contains(link));
+
+  Future<bool> editStandaloneProfile(String link, String replacement) async {
+    final state = widget.state;
+    if (_subscriptionOperationsBusy ||
+        state.tunnel.busy ||
+        !_isStandalone(state, link)) {
+      notice(
+        'Этот сервер изменяется через свою подписку либо занят другой операцией',
+      );
+      return false;
+    }
+    VlessProfile profile;
+    try {
+      profile = VlessProfile.parse(replacement);
+    } on FormatException {
+      notice(
+        'Не удалось изменить сервер. Проверь ссылку и поддерживаемый протокол.',
+      );
+      return false;
+    }
+    final nextLink = profile.toShareLink();
+    if (nextLink == link) return true;
+    final before = _selectedLink;
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      final existing = state.profiles.any(
+        (profile) => profile.toShareLink() == nextLink,
+      );
+      final remaining = <VlessProfile>[
+        for (final current in state.profiles)
+          if (current.toShareLink() != link)
+            current
+          else if (!existing)
+            profile,
+      ];
+      final selection = before == link ? nextLink : before;
+      setState(() {
+        state.profiles
+          ..clear()
+          ..addAll(remaining);
+        state.selectedProfile = remaining.indexWhere(
+          (profile) => profile.toShareLink() == selection,
+        );
+        state.latency.remove(link);
+      });
+      state.onChanged?.call();
+      _queueSubscriptionReconcile(before, silent: false);
+      notice('Параметры отдельного сервера сохранены.');
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
+    if (mounted) await _reconcileRefreshedSelection();
+    return true;
+  }
+
+  Future<bool> deleteStandaloneProfile(String link) async {
+    final state = widget.state, tunnel = widget.state.tunnel;
+    if (_subscriptionOperationsBusy ||
+        tunnel.busy ||
+        !_isStandalone(state, link)) {
+      notice(
+        'Этот сервер изменяется через свою подписку либо занят другой операцией',
+      );
+      return false;
+    }
+    final selectedBefore = _selectedLink;
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      if (selectedBefore == link &&
+          (tunnel.running || tunnel.stats.state != 'DISCONNECTED')) {
+        _refreshedSelection = null;
+        final stopped = await _confirmSubscriptionDisconnect(tunnel);
+        if (!mounted ||
+            !identical(state, widget.state) ||
+            !_isStandalone(state, link)) {
+          return false;
+        }
+        if (!stopped ||
+            tunnel.phase != TunnelPhase.disconnected ||
+            tunnel.busy ||
+            _selectedLink != selectedBefore) {
+          notice('Отключение VPN не подтверждено. Сервер сохранён.');
+          return false;
+        }
+      }
+      if (!mounted ||
+          !identical(state, widget.state) ||
+          !_isStandalone(state, link)) {
+        return false;
+      }
+      final selected = _selectedLink;
+      setState(() {
+        state.profiles.removeWhere((profile) => profile.toShareLink() == link);
+        state.selectedProfile = state.profiles.indexWhere(
+          (profile) => profile.toShareLink() == selected,
+        );
+        state.latency.remove(link);
+      });
+      state.onChanged?.call();
+      notice('Отдельный сервер удалён. Подписки сохранены.');
+      return true;
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
   }
 
   VlessProfile? _subscriptionReplacement(
@@ -422,6 +767,24 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   bool applyImport(ImportedConnection value, {bool silent = false}) {
+    if (_subscriptionOperationsBusy) {
+      if (!silent) notice('Дождись завершения операции с подписками');
+      return false;
+    }
+    final before = _selectedLink;
+    final applied = _commitImport(value, silent: silent);
+    if (applied) {
+      _queueSubscriptionReconcile(before, silent: silent);
+      unawaited(_reconcileRefreshedSelection());
+    }
+    return applied;
+  }
+
+  bool _commitImport(
+    ImportedConnection value, {
+    bool silent = false,
+    String? replacingSource,
+  }) {
     final state = widget.state;
     if (value.profiles.isEmpty) {
       if (!silent) notice('В подписке нет поддерживаемых серверов');
@@ -429,13 +792,15 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     }
     if (value.source != null &&
         !state.subscriptions.containsKey(value.source) &&
+        replacingSource == null &&
         state.subscriptions.length >= 200) {
       if (!silent) notice('Можно сохранить до 200 подписок');
       return false;
     }
-    final oldLinks = state.subscriptions[value.source] ?? <String>[];
+    final previousSource = replacingSource ?? value.source;
+    final oldLinks = state.subscriptions[previousSource] ?? <String>[];
     final otherLinks = state.subscriptions.entries
-        .where((e) => e.key != value.source)
+        .where((e) => e.key != previousSource)
         .expand((e) => e.value)
         .toSet();
     final remaining = state.profiles
@@ -483,6 +848,9 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
         ..addAll(remaining);
       state.selectedProfile = selected;
       if (value.source != null) {
+        if (replacingSource != null) {
+          state.subscriptions.remove(replacingSource);
+        }
         state.subscriptions[value.source!] = value.profiles
             .map((p) => p.toShareLink())
             .toList();
@@ -595,7 +963,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   Future<void> refreshSubscriptions({bool silent = false}) async {
-    if (refreshing || _reconcilingRefresh) return;
+    if (_subscriptionOperationsBusy) return;
     if (widget.state.subscriptions.isEmpty) {
       if (!silent) await import();
       return;
@@ -609,13 +977,21 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
       var updated = 0, failed = 0;
       SubscriptionImportReason? safeReason;
       final load = widget.loadSubscription ?? SubscriptionImporter().load;
+      final state = widget.state;
       for (final source in widget.state.subscriptions.keys.toList()) {
+        final original = state.subscriptions[source];
+        if (original == null) continue;
+        final sourceSnapshot = List<String>.of(original);
         try {
           final result = await load(source);
-          if (!mounted) return;
+          if (!mounted || !identical(state, widget.state)) return;
+          if (!_sourceStillMatches(state, source, sourceSnapshot)) {
+            failed++;
+            continue;
+          }
           final selectedBefore = _selectedLink;
           final tunnel = widget.state.tunnel;
-          if (result.source == source && applyImport(result, silent: true)) {
+          if (result.source == source && _commitImport(result, silent: true)) {
             updated++;
             final selectedAfter = _selectedLink;
             if (selectedBefore != null &&
@@ -628,14 +1004,14 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
             failed++;
           }
         } on SubscriptionImportException catch (error) {
-          if (!mounted) return;
+          if (!mounted || !identical(state, widget.state)) return;
           failed++;
           if (safeReason == null ||
               error.reason == SubscriptionImportReason.deviceRevoked) {
             safeReason = error.reason;
           }
         } catch (_) {
-          if (!mounted) return;
+          if (!mounted || !identical(state, widget.state)) return;
           // One expired or unreachable provider must not block the others.
           // Do not surface exception text: it may contain a secret URL.
           failed++;
@@ -762,19 +1138,54 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> importAccountSubscription(String source) async {
+    if (_subscriptionOperationsBusy) {
+      throw const AccountError('Дождись завершения операции с подключениями');
+    }
+    final state = widget.state;
+    String target;
+    try {
+      target = subscriptionUri(source).toString();
+    } on FormatException {
+      throw const AccountError('Сервис вернул некорректную ссылку подписки');
+    }
+    var applied = false;
+    setState(() => _subscriptionMutationBusy = true);
+    try {
+      final result =
+          await (widget.loadSubscription ?? SubscriptionImporter().load)(
+            target,
+          );
+      if (!mounted || !identical(widget.state, state)) return;
+      if (result.source != target) {
+        throw const AccountError('Не удалось получить серверы этой подписки');
+      }
+      final before = _selectedLink;
+      applied = _commitImport(result);
+      if (!applied) throw const AccountError('Не удалось сохранить подписку');
+      _queueSubscriptionReconcile(before, silent: false);
+    } on AccountError {
+      rethrow;
+    } on SubscriptionImportException catch (error) {
+      throw AccountError(
+        SubscriptionImportException(error.reason).message.toString(),
+      );
+    } catch (_) {
+      throw const AccountError(
+        'Не удалось загрузить подписку. Прежние подключения сохранены.',
+      );
+    } finally {
+      if (mounted) setState(() => _subscriptionMutationBusy = false);
+    }
+    if (applied && mounted) await _reconcileRefreshedSelection();
+  }
+
   Future<void> loginTelegram() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AccountPage(
           account: widget.state.account,
-          importSubscription: (source) async {
-            try {
-              final result = await SubscriptionImporter().load(source);
-              if (mounted) applyImport(result);
-            } on FormatException catch (e) {
-              throw AccountError(e.message.toString());
-            }
-          },
+          importSubscription: importAccountSubscription,
         ),
       ),
     );
@@ -813,6 +1224,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
             onAccent: widget.onAccent,
             onNavigate: widget.onNavigate,
             onImport: import,
+            onManageSubscriptions: manageSubscriptions,
             onLogin: loginTelegram,
             onRefresh: refreshSubscriptions,
             onPing: checkLatency,

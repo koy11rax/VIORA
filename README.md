@@ -3,21 +3,21 @@
 VPN-клиент для Android, Windows и Linux. Графитовый интерфейс, фиолетовые акценты,
 подписки своего сервиса и импорт других совместимых серверов.
 
-В Android и Windows 1.1.0 добавлены сторонние подписки и отдельные подключения VLESS,
+В 1.1.0 добавлены сторонние подписки и отдельные подключения VLESS,
 VMess, Trojan, Shadowsocks и Hysteria2, включая Salamander. Поддерживаются списки
 URI/Base64, Clash YAML/JSON и sing-box JSON. Точные сочетания и ограничения —
-в [описании импорта](docs/multi-protocol-import.md). Linux остаётся в прежнем
-выпуске 1.0.5; Linux 1.1.0 не публиковался.
+в [описании импорта](docs/multi-protocol-import.md). Сборка 37 также добавляет
+редактирование и удаление сохранённых подписок и отдельных серверов.
 
 ## Скачать
 
 - [Android APK 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Android-1.1.0-release.apk)
 - [Windows: установщик EXE 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Windows-1.1.0-Setup.exe)
-- [Debian / Ubuntu: DEB 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/Viora-Linux-1.0.5-amd64.deb)
-- [Fedora: RPM 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/Viora-Linux-1.0.5-1.x86_64.rpm)
-- [Arch: пакет pacman 1.0.5](https://github.com/koy11rax/VIORA/releases/download/v1.0.5-linux/viora-bin-1.0.5-1-x86_64.pkg.tar.zst)
+- [Debian / Ubuntu: DEB 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Linux-1.1.0-amd64.deb)
+- [Fedora: RPM 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Linux-1.1.0-1.x86_64.rpm)
+- [Arch: пакет pacman 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/viora-bin-1.1.0-1-x86_64.pkg.tar.zst)
 - [Android и Windows 1.1.0: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.1.0)
-- [Linux 1.0.5: исходники, все файлы и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.0.5-linux)
+- [Все файлы выпуска 1.1.0 и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.1.0)
 
 Android 1.0.2 исправляет восстановление соединения, применение обновлённой
 подписки и сохранение выбранного способа подключения. Проверка пинга отдельно
@@ -45,7 +45,7 @@ Windows 1.0.5 заменяет Xray TUN отдельным модулем sing-b
 
 - Импорт подписки или сервера по ссылке, из буфера обмена и QR.
 - VLESS, VMess AEAD, Trojan, Shadowsocks AEAD и Hysteria2 с Salamander —
-  [поддерживаемые сочетания](docs/multi-protocol-import.md) для Android/Windows 1.1.0.
+  [поддерживаемые сочетания](docs/multi-protocol-import.md) для 1.1.0.
 - Telegram-вход, подписка, устройства и продление с инструкцией оплаты в приложении.
 - Административный кабинет с серверной проверкой роли, платежами, пользователями и группами.
 - Правила маршрутизации, выбор приложений, отключаемый прямой доступ к российским сервисам.

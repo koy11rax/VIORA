@@ -3,7 +3,7 @@ param(
     [string]$JavaHome = 'D:\Android Studio\jbr',
     [string]$AndroidSdk = "$env:LOCALAPPDATA\Android\Sdk",
     [string]$VersionName = '1.1.0',
-    [int]$VersionCode = 36,
+    [int]$VersionCode = 37,
     [switch]$InitializeKey,
     [switch]$UseGoogleMirror,
     [switch]$SkipVerification

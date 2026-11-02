@@ -20,6 +20,7 @@ class ApprovedContent extends StatelessWidget {
   final ValueChanged<Color> onAccent;
   final ValueChanged<int> onNavigate;
   final VoidCallback onImport, onLogin, onConnect, onChanged, onRefresh;
+  final VoidCallback? onManageSubscriptions;
   final VoidCallback? onPing;
   final ValueChanged<int>? onSelectServer;
   final bool refreshing, measuring;
@@ -39,6 +40,7 @@ class ApprovedContent extends StatelessWidget {
     required this.onConnect,
     required this.onChanged,
     required this.onNotice,
+    this.onManageSubscriptions,
     this.onPing,
     this.onSelectServer,
     this.refreshing = false,
@@ -832,6 +834,27 @@ class ApprovedContent extends StatelessWidget {
         latency: state.tcpConnectTime(state.profiles[i]),
       );
 
+  Widget subscriptionLinks(BuildContext context) => DesignCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        title('Ссылки подключений'),
+        gap(8),
+        Text(
+          'Сохранено подписок: ${state.subscriptions.length}. Изменение ссылок и удаление серверов — отдельно от оплаты.',
+          style: TextStyle(color: VioraColors(context).muted),
+        ),
+        gap(14),
+        OutlinedButton.icon(
+          key: const ValueKey('manage-subscriptions'),
+          onPressed: onManageSubscriptions,
+          icon: const Icon(Icons.link_rounded, size: 19),
+          label: const Text('Управление подключениями'),
+        ),
+      ],
+    ),
+  );
+
   Widget servers(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -839,6 +862,8 @@ class ApprovedContent extends StatelessWidget {
         'Твои серверы',
         'Подписка твоего VPN и личные подключения — в одном месте.',
       ),
+      subscriptionLinks(context),
+      gap(22),
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -927,6 +952,8 @@ class ApprovedContent extends StatelessWidget {
         'Моя подписка',
         'Всё для твоего VPN — без поиска ссылки и лишних настроек.',
       ),
+      subscriptionLinks(context),
+      gap(16),
       provider(context),
       gap(16),
       LayoutBuilder(

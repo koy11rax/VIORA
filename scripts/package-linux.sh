@@ -3,7 +3,7 @@ set -euo pipefail
 umask 022
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bundle="${1:-$root/apps/client/build/linux/x64/release/bundle}"
-version="${VIORA_VERSION:-1.0.5}"
+version="${VIORA_VERSION:-1.1.0}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version'; exit 1; }
 suffix="${VIORA_PACKAGE_SUFFIX:-}"
 [[ "$suffix" =~ ^[A-Za-z0-9_-]*$ ]] || { echo 'Invalid package suffix'; exit 1; }
@@ -64,7 +64,7 @@ Priority: optional
 Depends: libgtk-3-0, libsecret-1-0, libayatana-appindicator3-1, libstdc++6, libc6 (>= 2.35), policykit-1, nftables, iproute2, ca-certificates, systemd-resolved | systemd (<< 251)
 Recommends: gnome-keyring
 Description: VIORA VPN — клиент VPN и управление подпиской
- VLESS, выбор программ, маршрутизация, аккаунт Telegram и управление устройствами.
+ VLESS, VMess, Trojan, Shadowsocks, Hysteria2, выбор программ и маршрутизация.
 EOF
 install -m644 "$root/docs/linux-install-variants-$version.md" "$stage/usr/lib/viora/READ-ME-RU.txt"
 install -m644 "$root/apps/client/assets/licenses/flutter_v2ray_client-MIT.txt" "$stage/usr/lib/viora/licenses/"
@@ -78,7 +78,7 @@ flutter_v2ray_client MIT. sing-box запускается отдельным п�
 Linux sing-box 1.14.4-viora.1 собран VIORA с опубликованным исправлением;
 это не неизменённый официальный Linux binary. Overlay и сборщик — в sing-box-viora.
 Полный набор уведомлений Flutter расположен в data/flutter_assets/NOTICES.Z.
-Исходники клиента и закреплённых движков: Viora-Linux-$version-source.zip.
+Исходники клиента и закреплённых движков: Viora-$version-source.zip.
 EOF
 printf '%s\n' 'Xray source: https://github.com/XTLS/Xray-core/tree/701af60772cda123492f86e383e1fdba066614a9' > "$stage/usr/lib/viora/licenses/Xray-source.txt"
 cat > "$stage/DEBIAN/postinst" <<'EOF'

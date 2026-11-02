@@ -84,6 +84,19 @@ for ($i=0;$i -lt $files.Count;$i++) {
 }
 $restartManager=@(Rows 'SELECT * FROM `Property`' | Where-Object { $_.StringData(1) -eq 'MSIRESTARTMANAGERCONTROL' })
 if ($restartManager.Count -ne 0) { throw 'Package must keep default Windows Restart Manager behavior' }
+$versionRow=@(Rows 'SELECT * FROM `Property`' | Where-Object { $_.StringData(1) -eq 'ProductVersion' })
+if ($versionRow.Count -ne 1) { throw 'Missing package version' }
+$packageVersion=$versionRow[0].StringData(2)
+$upgradeRows=@(Rows 'SELECT * FROM `Upgrade`')
+$oldUpgrade=@($upgradeRows | Where-Object { $_.StringData(7) -eq 'OLDPRODUCTS' })
+$newUpgrade=@($upgradeRows | Where-Object { $_.StringData(7) -eq 'NEWERPRODUCTS' })
+if ($upgradeRows.Count -ne 2 -or $oldUpgrade.Count -ne 1 -or $newUpgrade.Count -ne 1 -or
+    $oldUpgrade[0].StringData(2) -ne '0.0.0' -or $oldUpgrade[0].StringData(3) -ne $packageVersion -or $oldUpgrade[0].IntegerData(5) -ne 769 -or
+    $newUpgrade[0].StringData(2) -ne $packageVersion -or $newUpgrade[0].StringData(3) -or $newUpgrade[0].IntegerData(5) -ne 2 -or
+    $oldUpgrade[0].StringData(1) -ne $newUpgrade[0].StringData(1)) {
+    throw 'Upgrade ranges must replace equal semantic versions and reject only strictly newer ones'
+}
+'Verified same-version revision upgrade metadata and strictly newer-version downgrade guard.'
 # Read-only standard actions: no installation, registry writes or elevation.
 $session=$installer.OpenPackage($msi,1)
 if ($InstallDirectory) { $session.Property('INSTALLDIR')=$InstallDirectory }

@@ -29,7 +29,7 @@ flutter test --no-pub. Для тестового APK — flutter build apk --deb
 Пути SDK/Flutter в android/local.properties локальные и не публикуются.
 
 Подписанный выпуск создаёт scripts/build-android-release.ps1 с внешним
-SigningDirectory, JavaHome, AndroidSdk, VersionName 1.1.0 и VersionCode 36.
+SigningDirectory, JavaHome, AndroidSdk, VersionName 1.1.0 и VersionCode 37.
 InitializeKey применяй только для новой независимой подписи. Не заменяй
 существующий ключ: другая подпись не сможет обновить официальную установку.
 Секреты подписи должны оставаться вне репозитория. APK поставляется отдельно.

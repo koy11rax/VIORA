@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export VIORA_VERSION="${VIORA_VERSION:-1.0.5}"
-export VIORA_BUILD_NUMBER="${VIORA_BUILD_NUMBER:-35}"
+export VIORA_VERSION="${VIORA_VERSION:-1.1.0}"
+export VIORA_BUILD_NUMBER="${VIORA_BUILD_NUMBER:-37}"
 cd "$(dirname "${BASH_SOURCE[0]}")/../apps/client"
 command -v flutter >/dev/null || { echo 'Install Flutter 3.35.5 and add it to PATH'; exit 1; }
 pkg-config --exists gtk+-3.0 libsecret-1 ayatana-appindicator3-0.1 || { echo 'Install GTK 3, libsecret and libayatana-appindicator3 development packages'; exit 1; }

@@ -93,9 +93,12 @@ Insert Feature @('Feature','Feature_Parent','Title','Description','Display','Lev
 Insert AppSearch @('Property','Signature_') @('CURRENTBUILD','WindowsBuild')
 Insert RegLocator @('Signature_','Root','Key','Name','Type') @('WindowsBuild',2,'SOFTWARE\Microsoft\Windows NT\CurrentVersion','CurrentBuildNumber',18)
 Insert LaunchCondition @('Condition','Description') @('Installed OR (VersionNT64 AND CURRENTBUILD >= 10240)','Viora requires 64-bit Windows 10 or Windows 11.')
-Insert LaunchCondition @('Condition','Description') @('Installed OR NOT NEWERPRODUCTS','This or a newer Viora version is already installed.')
-Insert Upgrade @('UpgradeCode','VersionMin','VersionMax','Language','Attributes','Remove','ActionProperty') @($vioraUpgrade,'0.0.0',$Version,$null,257,$null,'OLDPRODUCTS')
-Insert Upgrade @('UpgradeCode','VersionMin','VersionMax','Language','Attributes','Remove','ActionProperty') @($vioraUpgrade,$Version,$null,$null,258,$null,'NEWERPRODUCTS')
+Insert LaunchCondition @('Condition','Description') @('Installed OR NOT NEWERPRODUCTS','A newer Viora version is already installed.')
+# MSI compares only the first three ProductVersion fields. A new application
+# build (for example 1.1.0+37 over +36) must replace the same semantic version;
+# only strictly greater semantic versions belong to the downgrade guard.
+Insert Upgrade @('UpgradeCode','VersionMin','VersionMax','Language','Attributes','Remove','ActionProperty') @($vioraUpgrade,'0.0.0',$Version,$null,769,$null,'OLDPRODUCTS')
+Insert Upgrade @('UpgradeCode','VersionMin','VersionMax','Language','Attributes','Remove','ActionProperty') @($vioraUpgrade,$Version,$null,$null,2,$null,'NEWERPRODUCTS')
 $vioraDirs = @{ '' = 'INSTALLDIR' }
 $vioraDirCount = 0
 function DirectoryId([string]$Relative) {
