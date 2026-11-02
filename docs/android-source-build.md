@@ -1,10 +1,10 @@
-# Сборка Android 1.1.0
+# Сборка Android 1.1.1
 
-Архив Viora-Android-1.1.0-source.zip содержит соответствующие Android-исходники:
+Архив `Viora-1.1.1-source.zip` содержит соответствующие исходники выпуска:
 Flutter-клиент, тесты, Android runner, Java-интеграцию, AndroidLibXrayLite и vendor.
 В нём нет пользовательских профилей, ключей подписи, баз и готового AAR.
-Серверный адаптер и рабочий бот для сборки Android не требуются и в этот архив
-не включены. В архиве также сохранены overlay защиты сокетов и локальные
+Рабочий бот и его базы не включены; общий серверный адаптер для сборки Android
+не требуется. В архиве также сохранены overlay защиты сокетов и локальные
 протокольные тесты. Публикация исходников не означает проверку удалённого VPN.
 
 Требуются Flutter 3.35.5 / Dart 3.9.2, JDK 21, Android SDK 36,
@@ -29,7 +29,7 @@ flutter test --no-pub. Для тестового APK — flutter build apk --deb
 Пути SDK/Flutter в android/local.properties локальные и не публикуются.
 
 Подписанный выпуск создаёт scripts/build-android-release.ps1 с внешним
-SigningDirectory, JavaHome, AndroidSdk, VersionName 1.1.0 и VersionCode 37.
+SigningDirectory, JavaHome, AndroidSdk, VersionName 1.1.1 и VersionCode 41.
 InitializeKey применяй только для новой независимой подписи. Не заменяй
 существующий ключ: другая подпись не сможет обновить официальную установку.
 Секреты подписи должны оставаться вне репозитория. APK поставляется отдельно.

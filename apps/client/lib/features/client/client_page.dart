@@ -39,6 +39,9 @@ class ClientState {
   VoidCallback? onChanged;
   int selectedProfile = -1, demoProfile = 0;
   bool profilesLoaded = false, startupHandled = false;
+  // Set only by the application while restoring the encrypted profile vault.
+  // A failed read must never be treated as permission to replace saved data.
+  bool profilesRestoring = false;
   bool protectionBusy = false;
   String protectionStatus = 'unknown';
   DateTime lastSubscriptionRefresh = DateTime.fromMillisecondsSinceEpoch(0);
@@ -400,7 +403,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
 
   Future<void> import() async {
     if (_subscriptionOperationsBusy) {
-      notice('Дождись завершения операции с подписками');
+      notice(_subscriptionBusyMessage);
       return;
     }
     final state = widget.state;
@@ -422,7 +425,14 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
   }
 
   bool get _subscriptionOperationsBusy =>
-      refreshing || _subscriptionMutationBusy || _reconcilingRefresh;
+      widget.state.profilesRestoring ||
+      refreshing ||
+      _subscriptionMutationBusy ||
+      _reconcilingRefresh;
+
+  String get _subscriptionBusyMessage => widget.state.profilesRestoring
+      ? 'Сначала дождись восстановления сохранённых подключений. Повторный импорт не нужен.'
+      : 'Дождись завершения операции с подписками';
 
   void _queueSubscriptionReconcile(String? before, {required bool silent}) {
     final after = _selectedLink, tunnel = widget.state.tunnel;
@@ -768,7 +778,7 @@ class ClientPageState extends State<ClientPage> with WidgetsBindingObserver {
 
   bool applyImport(ImportedConnection value, {bool silent = false}) {
     if (_subscriptionOperationsBusy) {
-      if (!silent) notice('Дождись завершения операции с подписками');
+      if (!silent) notice(_subscriptionBusyMessage);
       return false;
     }
     final before = _selectedLink;

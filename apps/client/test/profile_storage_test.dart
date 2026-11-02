@@ -15,6 +15,145 @@ void main() {
         .setMockMethodCallHandler(ProfileStorage.channel, null),
   );
   test(
+    'legacy VLESS display names recover without changing connection fields',
+    () async {
+      for (final name in [
+        'Сервер\nРоссия',
+        '\r\n\t',
+        '${'x' * 511}💜tail',
+        '  Preserved  ',
+      ]) {
+        final legacy = Uri.parse(link).replace(fragment: name).toString();
+        final before = Uri.parse(legacy);
+        var writes = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ProfileStorage.channel, (call) async {
+              if (call.method == 'readProfiles') {
+                return jsonEncode({
+                  'version': 2,
+                  'profiles': [link, legacy],
+                  'selected': 1,
+                  'subscriptions': {
+                    'https://example.invalid/sub': [link, legacy],
+                  },
+                });
+              }
+              writes++;
+              return null;
+            });
+        final storage = ProfileStorage();
+        final saved = await storage.load();
+        expect(saved.$2, 1);
+        final restored = saved.$1[1];
+        final after = Uri.parse(restored.toShareLink());
+        expect(after.userInfo, before.userInfo);
+        expect(after.query, before.query);
+        expect(after.host, before.host);
+        expect(after.port, before.port);
+        expect(restored.name.length, lessThanOrEqualTo(512));
+        expect(restored.name.contains(RegExp(r'[\x00-\x1f\x7f]')), isFalse);
+        expect(restored.name.contains('\ufffd'), isFalse);
+        if (name == '  Preserved  ') expect(restored.name, name);
+        expect(
+          storage.subscriptions.values.single.last,
+          restored.toShareLink(),
+        );
+        expect(writes, 0);
+      }
+    },
+  );
+
+  test(
+    'legacy label repair never repairs credentials or disables TLS validation',
+    () async {
+      final label = Uri.parse(link).replace(fragment: 'A\nB').toString();
+      for (final unsafe in [
+        label.replaceFirst(
+          '00000000-0000-4000-8000-000000000001',
+          'not-a-uuid',
+        ),
+        label.replaceFirst('#', '&allowInsecure=1#'),
+        label.replaceFirst('security=tls', 'security=none'),
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              ProfileStorage.channel,
+              (call) async => jsonEncode({
+                'version': 2,
+                'profiles': [unsafe],
+                'selected': 0,
+              }),
+            );
+        await expectLater(ProfileStorage().load(), throwsFormatException);
+      }
+      expect(
+        () => VlessProfile.parse(label),
+        throwsA(isA<ProfileFieldException>()),
+      );
+    },
+  );
+  test(
+    'legacy source links normalize before the next encrypted save',
+    () async {
+      final legacy = link.replaceFirst('#Test', '&allowInsecure=false#Test');
+      final canonical = VlessProfile.parse(legacy).toShareLink();
+      expect(canonical, isNot(legacy));
+      var payload = jsonEncode({
+        'version': 2,
+        'profiles': [legacy],
+        'selected': 0,
+        'subscriptions': {
+          'https://example.invalid/sub': [legacy],
+        },
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ProfileStorage.channel, (call) async {
+            if (call.method == 'readProfiles') return payload;
+            if (call.method == 'saveProfiles') {
+              payload = call.arguments['value'] as String;
+            }
+            return null;
+          });
+      final storage = ProfileStorage();
+      final loaded = await storage.load();
+      expect(storage.subscriptions.values.single, [canonical]);
+      await storage.save(loaded.$1, loaded.$2, sources: storage.subscriptions);
+      final restarted = ProfileStorage();
+      expect((await restarted.load()).$1.single.toShareLink(), canonical);
+      expect(restarted.subscriptions.values.single, [canonical]);
+    },
+  );
+
+  test(
+    'an already mismatched canonical snapshot recovers without deleting or writing',
+    () async {
+      final legacy = link.replaceFirst('#Test', '&allowInsecure=false#Test');
+      final canonical = VlessProfile.parse(legacy).toShareLink();
+      var writes = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ProfileStorage.channel, (call) async {
+            if (call.method == 'readProfiles') {
+              return jsonEncode({
+                'version': 2,
+                'profiles': [canonical],
+                'selected': 0,
+                'subscriptions': {
+                  'https://example.invalid/sub': [legacy],
+                },
+              });
+            }
+            writes++;
+            return null;
+          });
+      final storage = ProfileStorage();
+      final saved = await storage.load();
+      expect(saved.$1.single.toShareLink(), canonical);
+      expect(saved.$2, 0);
+      expect(storage.subscriptions.values.single, [canonical]);
+      expect(writes, 0);
+    },
+  );
+  test(
     'version 1 profiles migrate and oversized source sets are rejected before writing',
     () async {
       var writes = 0;
@@ -42,6 +181,61 @@ void main() {
         throwsFormatException,
       );
       expect(writes, 0);
+    },
+  );
+  test(
+    'unrelated or unsafe source links never overwrite the encrypted vault',
+    () async {
+      var writes = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ProfileStorage.channel, (call) async {
+            writes++;
+            return null;
+          });
+      final storage = ProfileStorage();
+      for (final invalid in [
+        link.replaceFirst('example.invalid', 'different.example.invalid'),
+        link.replaceFirst('#Test', '&allowInsecure=1#Test'),
+      ]) {
+        expect(
+          () => storage.save(
+            [VlessProfile.parse(link)],
+            0,
+            sources: {
+              'https://example.invalid/sub': [invalid],
+            },
+          ),
+          throwsFormatException,
+        );
+      }
+      expect(writes, 0);
+    },
+  );
+
+  test(
+    'a successful empty read clears memory but a failed read preserves metadata',
+    () async {
+      String? payload = jsonEncode({
+        'version': 2,
+        'profiles': [link],
+        'selected': 0,
+        'subscriptions': {
+          'https://example.invalid/sub': [link],
+        },
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            ProfileStorage.channel,
+            (call) async => payload,
+          );
+      final storage = ProfileStorage();
+      await storage.load();
+      payload = '{invalid';
+      await expectLater(storage.load(), throwsFormatException);
+      expect(storage.subscriptions.keys, ['https://example.invalid/sub']);
+      payload = null;
+      expect((await storage.load()).$1, isEmpty);
+      expect(storage.subscriptions, isEmpty);
     },
   );
   test(

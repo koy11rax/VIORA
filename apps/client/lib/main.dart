@@ -3,6 +3,7 @@ import 'platform/quick_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'domain/control.dart';
+import 'domain/profile.dart' show ProfileFieldException;
 import 'features/admin/admin_page.dart';
 import 'features/admin/live_admin_page.dart';
 import 'features/client/client_page.dart';
@@ -67,7 +68,7 @@ class VioraApp extends StatefulWidget {
   State<VioraApp> createState() => _VioraAppState();
 }
 
-class _VioraAppState extends State<VioraApp> {
+class _VioraAppState extends State<VioraApp> with WidgetsBindingObserver {
   ThemeMode mode = ThemeMode.dark;
   Color accent = const Color(0xffc6a7ff);
   final clientState = ClientState();
@@ -75,6 +76,10 @@ class _VioraAppState extends State<VioraApp> {
   bool get _nativeStorage =>
       Platform.isAndroid || Platform.isWindows || Platform.isLinux;
   bool _profilesLoaded = false;
+  bool _profilesLoading = false;
+  int _profileReadFailures = 0;
+  Timer? _profileReadRetry;
+  String? _profileReadWarning;
   bool _tunnelWasActive = false;
   String? warning;
   String? _quickTileWarning;
@@ -82,6 +87,8 @@ class _VioraAppState extends State<VioraApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    clientState.profilesRestoring = _nativeStorage;
     warning = widget.startupWarning;
     try {
       final data = widget.preferences;
@@ -147,12 +154,18 @@ class _VioraAppState extends State<VioraApp> {
   }
 
   Future<void> loadProfiles() async {
+    if (_profilesLoaded || _profilesLoading || !mounted) return;
+    _profileReadRetry?.cancel();
+    _profileReadRetry = null;
+    _profilesLoading = true;
     try {
       final saved = await profileStorage.load();
       if (!mounted) return;
       setState(() {
         _profilesLoaded = true;
+        _profileReadWarning = null;
         clientState.profilesLoaded = true;
+        clientState.profilesRestoring = false;
         final hadProfiles = clientState.profiles.isNotEmpty;
         clientState.profiles.addAll(saved.$1);
         clientState.subscriptions.addAll(profileStorage.subscriptions);
@@ -160,19 +173,76 @@ class _VioraAppState extends State<VioraApp> {
       });
       _prepareQuickTile();
     } catch (error) {
+      // Only fixed diagnostic categories: never log the encrypted payload,
+      // parser source, exception details or a credential-bearing profile URI.
+      final diagnostic = error is ProfileFieldException
+          ? 'profile_field:${error.issue.name}'
+          : error is PlatformException
+          ? 'native_read'
+          : error is TypeError
+          ? 'schema_type'
+          : error is FormatException
+          ? const {
+                  'Profiles too large',
+                  'Profiles version',
+                  'Too many profiles',
+                  'Too many subscriptions',
+                  'Subscription URL',
+                  'Subscription profiles',
+                  'Profiles JSON',
+                  'Для VLESS требуется TLS или REALITY',
+                  'В профиле есть неподдерживаемые параметры',
+                  'Некорректные данные профиля',
+                  'Проверь адрес и порт сервера',
+                  'Некорректный формат ссылки сервера',
+                  'Некорректный UUID сервера',
+                  'Некорректный ALPN',
+                  'Некорректные параметры профиля',
+                  'Некорректное имя TLS или WebSocket',
+                  'Путь транспорта должен начинаться с /',
+                  'Неподдерживаемый режим XHTTP',
+                  'Этот транспорт пока не поддерживается. Используй TCP или WebSocket.',
+                  'Профиль отключает проверку сертификата TLS. Получи безопасную ссылку у провайдера.',
+                }.contains(error.message)
+                ? error.message
+                : 'json_or_profile_format'
+          : 'unknown_read';
+      debugPrint('VIORA_PROFILE_RESTORE_FAILURE: $diagnostic');
       if (mounted) {
         setState(
-          () => warning =
+          () => _profileReadWarning =
               error is PlatformException && error.code == 'vault_unavailable'
-              ? 'Разблокируй системное хранилище и перезапусти Viora, чтобы загрузить серверы.'
-              : 'Не удалось прочитать защищённое хранилище серверов',
+              ? 'Разблокируй системное хранилище и вернись в VIORA. Сохранённые подключения будут прочитаны повторно.'
+              : 'Не удалось прочитать сохранённые подключения. Повторим чтение автоматически и при возврате в VIORA. Добавлять подписки заново не нужно.',
         );
+      }
+    } finally {
+      _profilesLoading = false;
+      // A transient vault/platform failure is not an empty installation. Keep
+      // mutations blocked and retry the same encrypted data, never reset it.
+      if (mounted && !_profilesLoaded && _profileReadFailures < 3) {
+        final delay = [1, 3, 10][_profileReadFailures++];
+        _profileReadRetry = Timer(Duration(seconds: delay), () {
+          unawaited(loadProfiles());
+        });
       }
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _nativeStorage &&
+        !_profilesLoaded) {
+      _profileReadFailures = 0;
+      unawaited(loadProfiles());
+    }
+  }
+
+  @override
   void dispose() {
+    _profileReadRetry?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     clientState.tunnel.removeListener(_tunnelChanged);
     clientState.tunnel.dispose();
     clientState.account.removeListener(_runtimeChanged);
@@ -228,7 +298,11 @@ class _VioraAppState extends State<VioraApp> {
       repository: widget.repository,
       mode: mode,
       clientState: clientState,
-      warning: warning ?? _quickTileWarning,
+      warning:
+          _profileReadWarning ??
+          (_nativeStorage && !_profilesLoaded
+              ? 'Загружаем сохранённые подключения…'
+              : warning ?? _quickTileWarning),
       onTheme: (v) {
         setState(() => mode = v);
         save();

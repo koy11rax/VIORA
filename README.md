@@ -11,7 +11,14 @@ URI/Base64, Clash YAML/JSON и sing-box JSON. Точные сочетания и
 
 ## Скачать
 
-- [Android APK 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Android-1.1.0-release.apk)
+Android **1.1.1, сборка 41** исправляет исчезновение списка серверов при чтении
+старых профилей и сохраняет подписки после потери сети. Обновляется поверх
+прежнего APK, без удаления данных: [исправления и проверки](docs/subscription-recovery-1.1.1.md).
+Windows и Linux пока распространяются как **1.1.0**; новых готовых сборок ПК
+в Android-выпуске 1.1.1 нет.
+
+- [Android APK 1.1.1](https://github.com/koy11rax/VIORA/releases/download/v1.1.1/Viora-Android-1.1.1-release.apk)
+- [Выпуск Android 1.1.1 и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.1.1)
 - [Windows: установщик EXE 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Windows-1.1.0-Setup.exe)
 - [Debian / Ubuntu: DEB 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Linux-1.1.0-amd64.deb)
 - [Fedora: RPM 1.1.0](https://github.com/koy11rax/VIORA/releases/download/v1.1.0/Viora-Linux-1.1.0-1.x86_64.rpm)
@@ -19,13 +26,14 @@ URI/Base64, Clash YAML/JSON и sing-box JSON. Точные сочетания и
 - [Android и Windows 1.1.0: исходники и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.1.0)
 - [Все файлы выпуска 1.1.0 и контрольные суммы](https://github.com/koy11rax/VIORA/releases/tag/v1.1.0)
 
-## Инструкции для 1.1.0, сборка 37
+## Инструкции
 
 - [Android: установка, подключение, плитка и защита](docs/android-user-guide.md).
 - [Windows: установка, служба, трей и постоянная блокировка](docs/windows-user-guide.md).
 - [Linux: DEB/RPM/Arch, подключение и восстановление сети](docs/linux-user-guide.md).
 
-Руководства полностью обновлены 2 ноября 2026 года. В каждом описаны импорт,
+Руководства обновлены 2 ноября 2026 года; Android дополнен исправлением 1.1.1.
+В каждом описаны импорт,
 редактирование и удаление ссылок, выбор приложений, DNS, маршрутизация,
 управление подпиской и устранение ошибок. Чек-лист для проверки на своём устройстве
 отделён от фактически выполненных разработчиком проверок выпуска.

@@ -1,5 +1,14 @@
 import 'dart:convert';
 
+enum ProfileFieldIssue { credential, displayName }
+
+/// Fixed field categories only; never includes an identifier, URI or secret.
+class ProfileFieldException extends FormatException {
+  final ProfileFieldIssue issue;
+  const ProfileFieldException(this.issue)
+    : super('Некорректные данные профиля');
+}
+
 /// The historical name is retained for existing encrypted stores and callers.
 class VlessProfile {
   final String protocol, name, host, uuid, transport, security;
@@ -105,10 +114,11 @@ class VlessProfile {
     }
     if (credential.isEmpty ||
         credential.length > 2048 ||
-        RegExp(r'[\x00-\x1f\x7f]').hasMatch(credential) ||
-        name.length > 512 ||
-        RegExp(r'[\x00-\x1f\x7f]').hasMatch(name)) {
-      throw const FormatException('Некорректные данные профиля');
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(credential)) {
+      throw const ProfileFieldException(ProfileFieldIssue.credential);
+    }
+    if (name.length > 512 || RegExp(r'[\x00-\x1f\x7f]').hasMatch(name)) {
+      throw const ProfileFieldException(ProfileFieldIssue.displayName);
     }
     if (parameters.length > 24 ||
         parameters.entries.any(

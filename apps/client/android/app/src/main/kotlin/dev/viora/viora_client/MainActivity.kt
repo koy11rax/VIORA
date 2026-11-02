@@ -80,7 +80,10 @@ class MainActivity : FlutterActivity() {
                             else -> { runOnUiThread { result.notImplemented() }; return@execute }
                         }
                         runOnUiThread { result.success(response) }
-                    } catch (_: Exception) {
+                    } catch (error: Exception) {
+                        if (call.method == "readProfiles") {
+                            android.util.Log.w("VioraVault", "profiles_read_failed:" + error.javaClass.simpleName)
+                        }
                         runOnUiThread { result.error("platform_unavailable", "Не удалось выполнить защищённую операцию", null) }
                     }
                 }

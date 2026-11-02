@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:viora_client/data/subscription_import.dart';
+import 'package:viora_client/data/profile_storage.dart';
 import 'package:viora_client/domain/profile.dart';
 import 'package:viora_client/features/client/client_page.dart';
 
@@ -57,6 +59,59 @@ Future<GlobalKey<ClientPageState>> mount(
 }
 
 void main() {
+  testWidgets(
+    'network loss and timeout preserve encrypted subscriptions across restart and recovery',
+    (tester) async {
+      final state = savedState();
+      final storage = ProfileStorage();
+      final original = state.profiles.map((p) => p.toShareLink()).toList();
+      await storage.save(
+        state.profiles,
+        state.selectedProfile,
+        sources: state.subscriptions,
+      );
+      var online = false, changes = 0;
+      state.onChanged = () {
+        changes++;
+        unawaited(
+          storage.save(
+            state.profiles,
+            state.selectedProfile,
+            sources: state.subscriptions,
+          ),
+        );
+      };
+      final key = await mount(tester, state, (source) async {
+        if (!online) {
+          if (source == failedSource) {
+            throw const SocketException('fixture: network unreachable');
+          }
+          throw TimeoutException('fixture: dropped response');
+        }
+        return ImportedConnection([
+          profile(source == failedSource ? 'new-first' : 'new-second'),
+        ], source: source);
+      });
+      for (var i = 0; i < 3; i++) {
+        await key.currentState!.refreshSubscriptions(silent: true);
+        expect(state.profiles.map((p) => p.toShareLink()), original);
+        expect(state.subscriptions.keys, [failedSource, validSource]);
+        expect(state.selectedProfile, 0);
+        expect(changes, 0);
+      }
+      final rebootedVault = ProfileStorage();
+      final restored = await rebootedVault.load();
+      expect(restored.$1.map((p) => p.toShareLink()), original);
+      expect(restored.$2, 0);
+      expect(rebootedVault.subscriptions, state.subscriptions);
+      online = true;
+      await key.currentState!.refreshSubscriptions(silent: true);
+      final recovered = await rebootedVault.load();
+      expect(recovered.$1.map((p) => p.name), ['new-first', 'new-second']);
+      expect(rebootedVault.subscriptions.keys, [failedSource, validSource]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
   testWidgets(
     'manual revoked refresh explains existing-device recovery and retains all profiles',
     (tester) async {
